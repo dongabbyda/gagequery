@@ -1,0 +1,24 @@
+{
+  "name": "gagequery",
+  "version": "0.12.0",
+  "private": true,
+  "description": "GageQuery: an interactive SQL course that runs and checks every query in the learner's browser.",
+  "author": "Gabriel Agedah",
+  "scripts": {
+    "data": "python3 datasets/generate.py",
+    "content": "python3 scripts/build_content.py",
+    "assemble": "python3 scripts/assemble.py",
+    "build": "npm run content && npm run assemble",
+    "serve": "python3 scripts/serve.py",
+    "test": "python3 -m pytest",
+    "test:fast": "python3 -m pytest -m \"not browser\""
+  },
+  "devDependencies": {
+    "codemirror": "5.65.16",
+    "sql.js": "1.10.3",
+    "terser": "5.31.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

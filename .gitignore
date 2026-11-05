@@ -1,0 +1,10 @@
+node_modules/
+build/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+test-results/
+*.png
+.DS_Store

@@ -1,0 +1,350 @@
+[
+ {
+  "week": 1,
+  "title": "Getting Started — SELECT, Filtering, and Sorting",
+  "concepts": [
+   {
+    "term": "Relational databases & tables",
+    "def": "A relational database stores data in tables made of rows (records) and columns (fields), with relationships defined between tables. Practitioners use this model because it minimizes duplicate data and lets you recombine information (customers, orders, products) on demand instead of storing one giant flat file."
+   },
+   {
+    "term": "Primary keys",
+    "def": "A primary key is a column (or set of columns) that uniquely identifies each row in a table, such as `customer_id`. Practitioners rely on primary keys to guarantee no duplicate records exist and to serve as the anchor point other tables reference."
+   },
+   {
+    "term": "The `SELECT` statement",
+    "def": "`SELECT` specifies which columns to retrieve from a table. It's the starting point of virtually every SQL query, since you almost always need to name the columns you actually want rather than pulling everything."
+   },
+   {
+    "term": "`FROM` clause",
+    "def": "`FROM` names the table (or tables) the query reads from. Every `SELECT` needs a `FROM` to tell the database engine where the columns live."
+   },
+   {
+    "term": "`WHERE` clause & comparison operators (`=`, `<>`, `<`, `>`, `<=`, `>=`)",
+    "def": "`WHERE` filters rows based on a condition, keeping only the ones that match. Practitioners use it constantly to narrow millions of rows down to the handful that matter for a specific question, like \"orders placed after March.\""
+   },
+   {
+    "term": "Logical operators (`AND`, `OR`, `NOT`)",
+    "def": "These combine multiple conditions in a `WHERE` clause into a single filter. Real business questions rarely have one condition — \"customers in Texas AND signed up this year\" needs `AND` to express both requirements at once."
+   },
+   {
+    "term": "`BETWEEN`",
+    "def": "`BETWEEN` checks whether a value falls within an inclusive range, as shorthand for `>=` and `<=` combined. It's used when a question involves a price range, date range, or age range, since it reads more clearly than two separate comparisons."
+   },
+   {
+    "term": "`IN`",
+    "def": "`IN` checks whether a value matches any item in a provided list, replacing a chain of `OR` conditions. Practitioners reach for it when filtering against several specific values at once, such as a list of category IDs or order statuses."
+   },
+   {
+    "term": "`LIKE` and wildcards (`%`, `_`)",
+    "def": "`LIKE` performs pattern matching on text, where `%` matches any sequence of characters and `_` matches exactly one. It's the standard tool for \"contains,\" \"starts with,\" or \"ends with\" searches — for example, finding every email that contains a certain domain."
+   },
+   {
+    "term": "`ORDER BY`",
+    "def": "`ORDER BY` sorts the result set by one or more columns, ascending (`ASC`, the default) or descending (`DESC`). Raw query results come back in no guaranteed order, so `ORDER BY` is what makes a report readable — e.g., most expensive products first."
+   },
+   {
+    "term": "`LIMIT` (`TOP` in SQL Server)",
+    "def": "`LIMIT` restricts the number of rows returned. It's used to preview data quickly or to answer \"top N\" questions, like the 5 most recent orders, without pulling back the entire table."
+   }
+  ]
+ },
+ {
+  "week": 2,
+  "title": "Cleaning Up Results — NULLs, DISTINCT, CASE, and Basic Functions",
+  "concepts": [
+   {
+    "term": "`NULL` and `IS NULL` / `IS NOT NULL`",
+    "def": "`NULL` represents missing or unknown data — it is not the same as zero or an empty string, and it can't be tested with `=`. Practitioners use `IS NULL`/`IS NOT NULL` to find incomplete records, such as orders that haven't shipped yet."
+   },
+   {
+    "term": "`DISTINCT`",
+    "def": "`DISTINCT` removes duplicate rows from a result set, keeping only unique combinations of the selected columns. It's used whenever you want a list of unique values, such as every country customers come from, without repeats."
+   },
+   {
+    "term": "Column aliasing (`AS`)",
+    "def": "`AS` renames a column or expression in the output, without changing anything in the underlying table. Aliases make computed or oddly-named columns readable in reports, e.g. `unit_price * quantity AS line_total`."
+   },
+   {
+    "term": "`CASE` expressions",
+    "def": "`CASE` evaluates conditions in order and returns a different value depending on which condition is met, similar to if/else logic. Practitioners use it to bucket continuous data into categories, like labeling products \"Budget,\" \"Mid-Range,\" or \"Premium\" based on price."
+   },
+   {
+    "term": "String concatenation (`||` in ANSI SQL/PostgreSQL/SQLite, `CONCAT()` in MySQL/SQL Server)",
+    "def": "Concatenation joins two or more strings into one. It's commonly used to combine `first_name` and `last_name` into a single display-friendly `full_name`."
+   },
+   {
+    "term": "Basic string functions (`UPPER`, `LOWER`, `SUBSTR`/`SUBSTRING`)",
+    "def": "These transform text — changing case or extracting a portion of a string. They're used for standardizing data for comparison (case-insensitive matching) or pulling out a piece of a value, like a domain from an email address."
+   },
+   {
+    "term": "Arithmetic in `SELECT`",
+    "def": "SQL can perform math directly in the column list (`+`, `-`, `*`, `/`), producing a computed value per row. This is how derived business metrics — like a line item's total cost — get calculated on the fly instead of being pre-stored."
+   }
+  ]
+ },
+ {
+  "week": 3,
+  "title": "Summarizing Data — Aggregate Functions, GROUP BY, and HAVING",
+  "concepts": [
+   {
+    "term": "Aggregate functions (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`)",
+    "def": "Aggregate functions collapse many rows into a single summary value — a count, total, average, minimum, or maximum. They're the foundation of virtually every business report, from \"how many orders this month\" to \"average order value.\""
+   },
+   {
+    "term": "`GROUP BY`",
+    "def": "`GROUP BY` splits rows into buckets based on one or more columns, then applies aggregate functions separately to each bucket. It's used whenever you need a summary *per something* — per category, per customer, per employee — rather than one grand total."
+   },
+   {
+    "term": "`HAVING`",
+    "def": "`HAVING` filters groups *after* aggregation, unlike `WHERE`, which filters individual rows *before* aggregation. Practitioners use it to answer questions like \"which customers placed more than 3 orders,\" where the condition depends on an aggregated value."
+   },
+   {
+    "term": "Combining `WHERE` and `GROUP BY`",
+    "def": "`WHERE` can pre-filter rows before they're grouped, which is more efficient than aggregating everything and filtering later. This matters when you only want to summarize a subset of the data, e.g., only `'Completed'` orders."
+   }
+  ]
+ },
+ {
+  "week": 4,
+  "title": "Combining Tables — JOINs",
+  "concepts": [
+   {
+    "term": "`INNER JOIN`",
+    "def": "An inner join returns only the rows where a match exists in both tables being joined. It's the default, most common join, used when you only care about records that have a corresponding related record — like orders that belong to a real customer."
+   },
+   {
+    "term": "`LEFT JOIN` (`LEFT OUTER JOIN`)",
+    "def": "A left join returns all rows from the left table, plus matching rows from the right table, filling in `NULL` where no match exists. Practitioners use it to find \"missing\" relationships, such as customers who have never placed an order."
+   },
+   {
+    "term": "`RIGHT JOIN`",
+    "def": "A right join is the mirror image of a left join — it keeps all rows from the right table, matching in rows from the left where possible. It's less commonly used in practice since most people restructure the query as a left join instead, but it produces identical results with the table order reversed."
+   },
+   {
+    "term": "`FULL OUTER JOIN`",
+    "def": "A full outer join returns all rows from both tables, matching where possible and filling `NULL` on either side where there's no match. It's used when you need a complete picture of both sides of a relationship, including unmatched rows from either table (note: MySQL doesn't support `FULL OUTER JOIN` directly — it's emulated with a `UNION` of a `LEFT JOIN` and a `RIGHT JOIN`)."
+   },
+   {
+    "term": "Self-joins",
+    "def": "A self-join joins a table to itself, typically using aliases to distinguish the two \"copies.\" It's the standard technique for hierarchical data within one table, like matching each employee to their manager, who is also a row in the same `employees` table."
+   },
+   {
+    "term": "Multi-table joins",
+    "def": "Multiple `JOIN` clauses can be chained together to pull data from three, four, or more related tables in a single query. This is the normal shape of a real business query — for example, connecting `customers` → `orders` → `order_items` → `products` to see what a customer actually bought."
+   }
+  ]
+ },
+ {
+  "week": 5,
+  "title": "Subqueries",
+  "concepts": [
+   {
+    "term": "Scalar subqueries",
+    "def": "A scalar subquery returns a single value and can be used anywhere a single value is expected, such as in a `WHERE` comparison. It's used to compare each row against a computed benchmark, like \"products priced above the overall average.\""
+   },
+   {
+    "term": "Subqueries in `WHERE`",
+    "def": "Placing a subquery inside a `WHERE` clause filters the outer query based on the result of an inner query. This lets you filter against a *calculated* set of values rather than a hardcoded list."
+   },
+   {
+    "term": "Subqueries in `FROM` (derived tables)",
+    "def": "A subquery can act as a temporary, unnamed table that the outer query then selects from and further filters or sorts. It's useful for staging an aggregation before applying additional logic to it, such as sorting or limiting the aggregated results."
+   },
+   {
+    "term": "Correlated subqueries",
+    "def": "A correlated subquery references a column from the outer query, so it re-runs once per outer row rather than just once overall. This is the pattern for row-by-row comparisons, like checking whether each employee earns more than *their own* manager."
+   },
+   {
+    "term": "`EXISTS` / `NOT EXISTS`",
+    "def": "`EXISTS` checks whether a subquery returns any rows at all, without caring about the actual values — it's often faster than `IN` for large datasets. It's the standard way to test for the presence (or absence) of a related record, like \"customers who have placed at least one order.\""
+   }
+  ]
+ },
+ {
+  "week": 6,
+  "title": "CTEs, Set Operations, and Recursive Queries",
+  "concepts": [
+   {
+    "term": "Common Table Expressions (`WITH` / CTEs)",
+    "def": "A CTE names a temporary result set at the top of a query using `WITH name AS (...)`, which the main query can then reference like a table. Practitioners use CTEs instead of nested subqueries because they read top-to-bottom, step by step, which is far easier to debug and maintain than deeply nested `SELECT`s."
+   },
+   {
+    "term": "Multiple/chained CTEs",
+    "def": "A single `WITH` clause can define several CTEs, each able to reference the ones defined before it, separated by commas. This lets you break a complex calculation into clearly labeled stages — compute revenue, then compute an average of that revenue, then filter against it."
+   },
+   {
+    "term": "`UNION` / `UNION ALL`",
+    "def": "`UNION` stacks the results of two or more queries vertically into one result set, removing duplicates; `UNION ALL` does the same but keeps duplicates and is faster. It's used to combine similar data from different sources or conditions into a single unified list or report."
+   },
+   {
+    "term": "`INTERSECT`",
+    "def": "`INTERSECT` returns only the rows that appear in the results of *both* queries being compared. It's used to find overlap between two sets, like customers who bought from two specific categories."
+   },
+   {
+    "term": "`EXCEPT` (`MINUS` in Oracle)",
+    "def": "`EXCEPT` returns rows that appear in the first query's results but not in the second's. It's used to find what's missing from one set relative to another, like customers who bought Electronics but never Books."
+   },
+   {
+    "term": "Recursive CTEs",
+    "def": "A recursive CTE references itself, repeatedly building on its own previous result until no new rows are produced. It's the standard technique for traversing hierarchical or tree-shaped data, such as an employee-to-manager org chart of unknown depth."
+   }
+  ]
+ },
+ {
+  "week": 7,
+  "title": "Window Functions I — Ranking",
+  "concepts": [
+   {
+    "term": "The `OVER()` clause",
+    "def": "`OVER()` turns an ordinary aggregate or ranking function into a *window function*, which calculates across a set of rows related to the current row while still returning one output row per input row. This is the fundamental difference from `GROUP BY`: window functions keep every detail row visible instead of collapsing them into one summary row per group."
+   },
+   {
+    "term": "`PARTITION BY`",
+    "def": "`PARTITION BY`, used inside `OVER()`, divides rows into groups the window function calculates separately within — similar to `GROUP BY`, but without collapsing rows. It's used whenever a ranking or running calculation should reset for each category, customer, or department rather than applying globally."
+   },
+   {
+    "term": "`ROW_NUMBER()`",
+    "def": "`ROW_NUMBER()` assigns a unique, sequential integer to each row within its partition, with no ties — even identical values get different numbers. It's used when you need exactly one row per group, such as picking each customer's *first* order chronologically."
+   },
+   {
+    "term": "`RANK()`",
+    "def": "`RANK()` assigns a rank based on `ORDER BY`, giving tied rows the same rank but then skipping the next rank number(s). It's used for leaderboard-style rankings where ties should be visible and the gap after a tie is expected, like \"1st, 1st, 3rd.\""
+   },
+   {
+    "term": "`DENSE_RANK()`",
+    "def": "`DENSE_RANK()` works like `RANK()` but does not skip numbers after a tie. It's preferred over `RANK()` when you want consecutive rank numbers regardless of ties, such as \"salary tier 1, 2, 3\" without gaps."
+   },
+   {
+    "term": "`NTILE(n)`",
+    "def": "`NTILE(n)` splits rows within a partition into `n` roughly equal-sized buckets, numbered 1 through `n`. It's used to create groupings like quartiles or percentiles, such as dividing products into four price bands."
+   }
+  ]
+ },
+ {
+  "week": 8,
+  "title": "Window Functions II — Offsets, Running Totals, and Moving Averages",
+  "concepts": [
+   {
+    "term": "Frame clauses (`ROWS BETWEEN ... AND ...`)",
+    "def": "A frame clause defines exactly which rows, relative to the current row, a window function should consider — e.g., \"from the start of the partition through the current row.\" It's what makes running totals and moving averages possible, by controlling the window of rows included in each calculation."
+   },
+   {
+    "term": "Running totals (`SUM() OVER (ORDER BY ... ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`)",
+    "def": "A running total adds up a value cumulatively as you move down the ordered rows. It's used for cumulative reporting, like year-to-date revenue that grows with each new order."
+   },
+   {
+    "term": "Moving averages (`AVG() OVER (... ROWS BETWEEN n PRECEDING AND CURRENT ROW)`)",
+    "def": "A moving average smooths out a metric by averaging it over a fixed-size rolling window of recent rows. Practitioners use it to see underlying trends without the noise of day-to-day or order-to-order fluctuation."
+   },
+   {
+    "term": "`LAG()`",
+    "def": "`LAG()` retrieves a value from a previous row within the same partition, based on the specified order. It's the standard way to compare a row to \"the one before it,\" such as this month's revenue vs. last month's."
+   },
+   {
+    "term": "`LEAD()`",
+    "def": "`LEAD()` is the mirror of `LAG()` — it retrieves a value from a *following* row. It's used to look forward, such as comparing today's order to the customer's next order once it happens."
+   },
+   {
+    "term": "`FIRST_VALUE()` / `LAST_VALUE()`",
+    "def": "These return the first or last value within the current window frame. They're used to attach a reference value — like \"the cheapest product in this category\" — onto every row in that category for easy comparison."
+   }
+  ]
+ },
+ {
+  "week": 9,
+  "title": "Conditional Aggregation, String & Date Functions",
+  "concepts": [
+   {
+    "term": "Conditional aggregation (`SUM(CASE WHEN ... THEN ... ELSE 0 END)`)",
+    "def": "This pattern combines `CASE` with an aggregate function to calculate a separate total for each condition, all within one `GROUP BY` query. It's the standard, portable way to build \"pivot table\" style reports — one row per group, one column per category — without needing a database-specific `PIVOT` command."
+   },
+   {
+    "term": "Pivot-style reporting",
+    "def": "A pivot-style report reshapes data from many rows into a grid, with categories or time periods spread across columns instead of stacked in rows. Practitioners build these for dashboards and executive summaries, where \"one row per month, one column per category\" is far more readable than a long list."
+   },
+   {
+    "term": "Date/time extraction functions (`strftime`, `DATE_FORMAT`, `EXTRACT`, `TO_CHAR`)",
+    "def": "These functions pull out a specific part of a date — year, month, day — or reformat it as text, though the exact function name varies by database engine. They're essential for grouping data by time period, like monthly or yearly revenue trends."
+   },
+   {
+    "term": "String manipulation (`SUBSTR`/`SUBSTRING`, `INSTR`/`POSITION`, `LENGTH`)",
+    "def": "These functions extract, locate, or measure portions of text. Practitioners use them for tasks like masking sensitive data (partially hiding an email), parsing structured text fields, or validating data format."
+   }
+  ]
+ },
+ {
+  "week": 10,
+  "title": "Views, Stored Procedures, Functions, and Triggers",
+  "concepts": [
+   {
+    "term": "Views",
+    "def": "A view is a saved, named query that behaves like a virtual table — every time it's queried, its underlying `SELECT` re-runs against current data. Practitioners use views to hide complex joins/aggregations behind a simple name, and to enforce a consistent definition of a metric (like \"customer lifetime value\") across an organization."
+   },
+   {
+    "term": "Stored procedures",
+    "def": "A stored procedure is a saved block of SQL (often with parameters and procedural logic) that can be executed with a single call, and can perform actions like inserts/updates, not just `SELECT`s. They're used to encapsulate multi-step business logic on the database server itself, reducing repeated application code and network round-trips."
+   },
+   {
+    "term": "User-defined functions",
+    "def": "A function is similar to a stored procedure but is designed to return a value (or table) and can be used inline within other queries, unlike most procedures. Practitioners use them to package a repeated calculation — like a custom tax or discount formula — into a single reusable name."
+   },
+   {
+    "term": "Triggers",
+    "def": "A trigger is a block of logic that automatically runs in response to a specific event (`INSERT`, `UPDATE`, `DELETE`) on a table. They're used to enforce business rules automatically, such as blocking an invalid insert, or to keep related data in sync without relying on the application layer to remember.\n\n> **Dialect note:** view syntax is identical across PostgreSQL, MySQL, SQL Server, and SQLite. Stored procedure and trigger *syntax*, however, differs meaningfully by engine — this week's examples show SQLite-compatible trigger syntax (fully tested) alongside PostgreSQL/MySQL reference syntax for procedures (shown for syntax literacy, since SQLite itself doesn't support stored procedures)."
+   }
+  ]
+ },
+ {
+  "week": 11,
+  "title": "Indexing & Query Optimization",
+  "concepts": [
+   {
+    "term": "Indexes",
+    "def": "An index is a separate data structure (typically a B-tree) that lets the database engine locate rows matching a condition without scanning the entire table. Practitioners add indexes to columns that are frequently filtered, joined, or sorted on, because a lookup that used to check every row can drop to checking only a handful."
+   },
+   {
+    "term": "Primary key indexes vs. secondary indexes",
+    "def": "A primary key is automatically indexed by nearly every database engine; a secondary index is one explicitly created on any other column. Secondary indexes are added deliberately on foreign key columns and frequently-filtered columns, since those aren't indexed automatically unless you create the index yourself."
+   },
+   {
+    "term": "`EXPLAIN` / `EXPLAIN QUERY PLAN`",
+    "def": "This command shows how the database engine intends to execute a query — whether it will scan a full table or use an index, and in what order it will join tables. Practitioners run it whenever a query feels slower than expected, to diagnose exactly where the time is going before making changes."
+   },
+   {
+    "term": "Sargable queries",
+    "def": "A \"sargable\" (Search ARGument ABLE) query is written so the database engine *can* use an index to satisfy a condition, as opposed to one that forces a full scan. Wrapping an indexed column in a function (e.g., `WHERE YEAR(order_date) = 2025`) usually makes a query non-sargable, since the engine must compute the function for every row instead of using the index directly."
+   },
+   {
+    "term": "Query rewriting for performance",
+    "def": "Certain query patterns — like correlated subqueries repeated per row, or `SELECT *` pulling unnecessary columns — can often be rewritten as joins or narrower column lists that run significantly faster on large tables. Practitioners learn to recognize these patterns because the *same logical result* can often be produced by very different-performing SQL."
+   }
+  ]
+ },
+ {
+  "week": 12,
+  "title": "Transactions, Data Integrity, and Capstone Work Session",
+  "concepts": [
+   {
+    "term": "Transactions & ACID properties",
+    "def": "A transaction is a group of one or more SQL statements executed as a single all-or-nothing unit, guaranteeing **A**tomicity, **C**onsistency, **I**solation, and **D**urability. Practitioners wrap multi-step operations — like inserting an order *and* its line items — in a transaction so that a failure partway through never leaves the database in a half-updated, inconsistent state."
+   },
+   {
+    "term": "`BEGIN` / `COMMIT`",
+    "def": "`BEGIN` (or `START TRANSACTION`) opens a transaction; `COMMIT` permanently saves every change made since it began. This is used whenever multiple related statements must succeed together — committing only happens once every step has completed without error."
+   },
+   {
+    "term": "`ROLLBACK`",
+    "def": "`ROLLBACK` undoes every change made since the transaction began, as if none of it happened. It's the safety net that makes transactions useful — when something goes wrong mid-transaction, `ROLLBACK` guarantees the database isn't left in a broken, partially-updated state."
+   },
+   {
+    "term": "Isolation levels",
+    "def": "An isolation level controls how much one transaction can \"see\" of another transaction's in-progress, uncommitted changes (from `READ UNCOMMITTED` up to `SERIALIZABLE`). Practitioners adjust isolation levels to balance correctness against performance — stricter isolation prevents more anomalies (like reading uncommitted data) but typically reduces concurrency."
+   },
+   {
+    "term": "`CHECK` constraints",
+    "def": "A `CHECK` constraint enforces a rule on a column's values at the database level, rejecting any row that violates it, such as requiring `quantity > 0`. These are used to guarantee data integrity regardless of which application, script, or person is writing to the table — the rule can't be accidentally bypassed at the app layer."
+   }
+  ]
+ }
+]
