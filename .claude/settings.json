@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm ci)",
+      "Bash(npm run build)",
+      "Bash(npm run content)",
+      "Bash(npm run assemble)",
+      "Bash(npm run data)",
+      "Bash(npm test)",
+      "Bash(npm run test:fast)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)"
+    ]
+  }
+}
