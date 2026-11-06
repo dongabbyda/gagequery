@@ -1142,14 +1142,48 @@ function viewProgress() {
   else p.appendChild(h('p', { class: 'muted', text: 'Concepts appear here as you attempt exercises that use them.' }));
   p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Show all ' + list.length + ' concepts in the course' }), masteryRows(list)));
   p.appendChild(h('h2', { text: 'Your data' }));
-  p.appendChild(h('p', { class: 'muted', text: 'Progress is saved in this browser only. Copy it out to keep a backup or move it to another browser.' }));
-  var area = h('textarea', { class: 'export', rows: '3', 'aria-label': 'Progress data', spellcheck: 'false' });
-  var exportBtn = h('button', { class: 'btn', type: 'button', text: 'Copy progress', onclick: function () { copyText(JSON.stringify({ v: S.v, progress: S.progress, helped: S.helped, hints: S.hints, days: S.days, reviewed: S.reviewed }), exportBtn); } });
-  var importBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Import pasted progress', onclick: function () { try { if (area.value.length > 2e6) throw 0; var d = JSON.parse(area.value); if (!d || typeof d.progress !== 'object' || Array.isArray(d.progress)) throw 0; var c = cleanState(d); S.progress = c.progress; S.helped = c.helped; S.hints = c.hints; S.days = c.days; S.reviewed = c.reviewed; migrate(d); save(); toast('Progress imported.'); route(true); } catch (e) { toast('That text is not GageQuery progress. Paste what Copy progress gave you.'); } } });
+  p.appendChild(h('p', { class: 'muted', text: 'Progress is saved in this browser only, so clearing site data erases it. Download a backup file now and then, and import it to restore your progress or move it to another browser or device. Importing replaces the progress here, and you can undo it.' }));
+  var fileInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true, 'aria-label': 'Choose a GageQuery progress file' });
+  fileInput.addEventListener('change', function () {
+    var f = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!f) return;
+    if (f.size > 2e6) { toast('That file is too large to be GageQuery progress.'); return; }
+    f.text().then(importProgress, function () { toast('That file could not be read.'); });
+  });
+  var downloadBtn = h('button', { class: 'btn primary', type: 'button', text: 'Download progress file', onclick: downloadProgress });
+  var uploadBtn = h('button', { class: 'btn', type: 'button', text: 'Import from file', onclick: function () { fileInput.click(); } });
+  var area = h('textarea', { class: 'export', rows: '3', 'aria-label': 'Progress as text, for copying or pasting', placeholder: 'Or paste copied progress text here', spellcheck: 'false' });
+  var exportBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Copy as text', onclick: function () { copyText(progressText(), exportBtn); } });
+  var importBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Import pasted text', onclick: function () { importProgress(area.value); } });
   var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; S.days = {}; S.reviewed = {}; save(); toast('Progress erased.'); route(true); } });
-  p.appendChild(area);
-  p.appendChild(h('div', { class: 'actions' }, exportBtn, importBtn, clearBtn));
+  p.appendChild(h('div', { class: 'actions' }, downloadBtn, uploadBtn, fileInput));
+  p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Copy and paste instead' }), area, h('div', { class: 'actions' }, exportBtn, importBtn)));
+  p.appendChild(h('div', { class: 'actions' }, clearBtn));
   return p;
+}
+
+/* Progress backup: the same text can be downloaded as a file, copied, or imported back from either. */
+function progressText() { return JSON.stringify({ app: 'gagequery', v: S.v, progress: S.progress, helped: S.helped, hints: S.hints, days: S.days, reviewed: S.reviewed }); }
+function downloadProgress() {
+  var url = URL.createObjectURL(new Blob([progressText()], { type: 'application/json' }));
+  var a = h('a', { href: url, download: 'gagequery-progress-' + dayKey(new Date()) + '.json' });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  toast('Progress file downloaded. Keep it somewhere safe.');
+}
+function importProgress(text) {
+  var before = { progress: S.progress, helped: S.helped, hints: S.hints, days: S.days, reviewed: S.reviewed };
+  try {
+    if (String(text).length > 2e6) throw 0;
+    var d = JSON.parse(text);
+    if (!d || typeof d.progress !== 'object' || Array.isArray(d.progress)) throw 0;
+    var c = cleanState(d);
+    S.progress = c.progress; S.helped = c.helped; S.hints = c.hints; S.days = c.days; S.reviewed = c.reviewed;
+    migrate(d); save(); paintRail(); paintMeter();
+    toast('Progress imported: ' + Object.keys(c.progress).length + ' exercises restored.', { label: 'Undo', fn: function () { for (var k in before) S[k] = before[k]; save(); paintRail(); paintMeter(); toast('Import undone.'); route(true); } });
+    route(true);
+  } catch (e) { toast('That is not a GageQuery progress file. Use the file you got from Download progress file.'); }
 }
 
 function viewAbout() {

@@ -189,15 +189,46 @@ def test_untrusted_saved_progress_is_cleaned(app_factory):
 
 def test_import_rejects_junk_and_keeps_only_known_entries(app):
     app.go('progress')
-    app.page.wait_for_selector('textarea.export')
+    app.page.click("summary:has-text('Copy and paste instead')")
     app.page.fill('textarea.export', '{"progress": {"m01-e01": {"state": "solved", "ds": "sales", "at": 1}, "evil": {"state": "solved"}}, "days": {"x": 1}}')
-    app.page.click("button:has-text('Import pasted progress')")
+    app.page.click("button:has-text('Import pasted text')")
     app.page.wait_for_timeout(300)
     saved = app.page.evaluate("JSON.parse(localStorage.getItem('gagequery-v1'))")
     assert list(saved['progress']) == ['m01-e01'] and 'x' not in saved['days']
+    app.page.click("summary:has-text('Copy and paste instead')")   # a successful import re-renders the page, which closes the box
     app.page.fill('textarea.export', '[1,2,3]')
-    app.page.click("button:has-text('Import pasted progress')")
-    assert 'not GageQuery progress' in app.page.inner_text('#toasts')
+    app.page.click("button:has-text('Import pasted text')")
+    assert 'not a GageQuery progress file' in app.page.inner_text('#toasts')
+
+
+def test_progress_can_be_downloaded_and_imported_from_a_file(app_factory, tmp_path):
+    seed = ("localStorage.setItem('gagequery-v1', JSON.stringify({v: 2, ds: 'sales', drafts: {}, hints: {'m01-e02@sales': 1}, helped: {}, days: {'2026-11-05': 2},"
+            " reviewed: {}, progress: {'m00-e01': {state: 'solved', ds: 'sales', at: 5}, 'm00-e02': {state: 'attempted', ds: 'sales', at: 6}}}))")
+    a = app_factory('progress', init_script="if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); %s }" % seed)
+    with a.page.expect_download() as dl:
+        a.page.click("button:has-text('Download progress file')")
+    name = dl.value.suggested_filename
+    assert name.startswith('gagequery-progress-') and name.endswith('.json')
+    path = tmp_path / name
+    dl.value.save_as(str(path))
+    data = __import__('json').loads(path.read_text(encoding='utf-8'))
+    assert data['app'] == 'gagequery' and sorted(data['progress']) == ['m00-e01', 'm00-e02']
+
+    b = app_factory('progress')                      # a different browser with nothing saved
+    assert '0/' in b.page.inner_text('#meter-text')
+    b.page.set_input_files("input[type=file]", str(path))
+    b.page.wait_for_selector("#toasts:has-text('2 exercises restored')")
+    saved = b.page.evaluate("JSON.parse(localStorage.getItem('gagequery-v1'))")
+    assert sorted(saved['progress']) == ['m00-e01', 'm00-e02'] and saved['hints'] == {'m01-e02@sales': 1}
+    assert '1/' in b.page.inner_text('#meter-text')
+    b.page.click("#toasts button:has-text('Undo')")  # restores what was there before the import
+    assert b.page.evaluate("Object.keys(JSON.parse(localStorage.getItem('gagequery-v1')).progress).length") == 0
+
+    bad = tmp_path / 'notes.json'
+    bad.write_text('{"hello": "world"}', encoding='utf-8')
+    b.page.set_input_files("input[type=file]", str(bad))
+    b.page.wait_for_selector("#toasts:has-text('not a GageQuery progress file')")
+    assert b.real_errors() == []
 
 
 def test_database_growth_is_capped_and_the_cap_cannot_be_lifted(app):
