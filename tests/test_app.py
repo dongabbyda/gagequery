@@ -159,3 +159,61 @@ def test_theme_switcher_cycles_system_light_dark_and_remembers(app_factory):
     assert root() == 'dark'
     app.page.click('#theme-btn')
     assert root() is None and app.page.evaluate("localStorage.getItem('gagequery-theme')") is None
+
+
+def test_page_makes_no_requests_to_other_origins(browser, base_url):
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    seen = []
+    page.on('request', lambda r: seen.append(r.url))
+    page.goto(base_url + '#home')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    page.evaluate("document.fonts.ready")
+    assert page.evaluate("document.fonts.check('16px \"Source Sans 3\"')"), 'bundled font did not load'
+    ctx.close()
+    foreign = [u for u in seen if not (u.startswith(base_url) or u.startswith(('data:', 'blob:')))]
+    assert foreign == [], foreign
+
+
+def test_untrusted_saved_progress_is_cleaned(app_factory):
+    hostile = ("localStorage.setItem('gagequery-v1', JSON.stringify({v: 2, ds: '<img src=x onerror=alert(1)>', progress: {"
+               "'m01-e01': {state: 'solved', ds: 'sales', at: 1}, 'nope': {state: 'solved'}, 'm01-e02': {state: '<b>x</b>'}, '__proto__': {polluted: 1}},"
+               " hints: {'m01-e01@sales': 99, 'm01-e03@sales': 2}, days: {'not-a-date': 5, '2026-01-01': 2}, drafts: {'<script>': 'x', 'playground@sales': 'SELECT 1'}}))")
+    app = app_factory('progress', init_script="if (!sessionStorage.getItem('h')) { sessionStorage.setItem('h', 1); %s }" % hostile)
+    assert app.page.locator('.stats').count() >= 1
+    # the page rendered, nothing was injected, and only the valid entries count
+    assert app.page.evaluate("document.querySelectorAll('img[src=x]').length") == 0
+    assert '1' in app.page.inner_text('.stats')
+    assert app.real_errors() == []
+
+
+def test_import_rejects_junk_and_keeps_only_known_entries(app):
+    app.go('progress')
+    app.page.wait_for_selector('textarea.export')
+    app.page.fill('textarea.export', '{"progress": {"m01-e01": {"state": "solved", "ds": "sales", "at": 1}, "evil": {"state": "solved"}}, "days": {"x": 1}}')
+    app.page.click("button:has-text('Import pasted progress')")
+    app.page.wait_for_timeout(300)
+    saved = app.page.evaluate("JSON.parse(localStorage.getItem('gagequery-v1'))")
+    assert list(saved['progress']) == ['m01-e01'] and 'x' not in saved['days']
+    app.page.fill('textarea.export', '[1,2,3]')
+    app.page.click("button:has-text('Import pasted progress')")
+    assert 'not GageQuery progress' in app.page.inner_text('#toasts')
+
+
+def test_database_growth_is_capped_and_the_cap_cannot_be_lifted(app):
+    app.page.click('#rail a[data-route=playground]')
+    app.page.wait_for_selector('.CodeMirror')
+    run = lambda sql: (app.page.evaluate("s => document.querySelector('.CodeMirror').CodeMirror.setValue(s)", sql), app.page.click("button:has-text('Run')"), app.page.wait_for_timeout(300))
+    run('PRAGMA max_page_count = 100000000;')
+    assert 'switched off' in app.page.inner_text('.res')
+    run("CREATE TABLE big AS WITH RECURSIVE r(n, pad) AS (SELECT 1, hex(randomblob(500)) UNION ALL SELECT n+1, hex(randomblob(500)) FROM r WHERE n < 400000) SELECT * FROM r;")
+    app.page.wait_for_selector('.err', timeout=20000)
+    assert 'full' in app.page.inner_text('.err').lower()
+
+
+def test_odd_urls_fall_back_to_home_without_errors(app):
+    for r in ('constructor', '__proto__', 'toString', 'm99', 'm03-e99', '%3Cscript%3E'):
+        app.go(r)
+        app.page.wait_for_timeout(150)
+        assert app.page.inner_text('h1').strip(), r
+    assert app.real_errors() == []

@@ -62,7 +62,7 @@ npm run data         # regenerate the five generated datasets (only after changi
 6. **Datasets are reproducible.** `datasets/generate.py` is seeded; `tests/test_content.py` regenerates into a temp
    folder and compares byte-for-byte. If you change a generator, run `npm run data`, rebuild, and expect many
    answers to change — re-check row counts and planted teaching cases (see `docs/CONTENT_GUIDE.md`).
-7. **No network at runtime.** Everything is inlined; the only external request is Google Fonts. The CSP in
+7. **No network at runtime.** Everything is inlined, fonts included (variable Latin subsets from `@fontsource-variable/*`, base64 in `assemble.py`); the page makes no external request. The CSP in
    `public/_headers` is what production serves and what the browser tests run under. Do not add `eval`,
    `new Function`, or remote scripts.
 8. **Progress lives in localStorage** under `gagequery-v1` (falls back to the old `querycraft-v1` key). Changing

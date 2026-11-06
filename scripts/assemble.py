@@ -7,7 +7,7 @@ Writes  dist/index.html                 the site: one HTML file plus public/* (d
 
 Everything (engine, editor, content, datasets) is inlined so the page works offline and needs no API.
 """
-import json, os, shutil, subprocess, sys
+import base64, json, os, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC, NM = os.path.join(ROOT, 'src'), os.path.join(ROOT, 'node_modules')
@@ -21,6 +21,30 @@ def read(*parts):
 def safe(js):
     """Make text safe to place inside a <script> element."""
     return js.replace('</script', '<\\/script').replace('<!--', '<\\!--')
+
+
+FONTS = [  # family, package, file: variable Latin subsets, inlined so the page makes no request to a font host
+    ('Source Sans 3', 'source-sans-3', 'source-sans-3-latin-wght-normal.woff2'),
+    ('Source Serif 4', 'source-serif-4', 'source-serif-4-latin-wght-normal.woff2'),
+    ('JetBrains Mono', 'jetbrains-mono', 'jetbrains-mono-latin-wght-normal.woff2'),
+]
+
+
+def font_css():
+    out = []
+    for family, pkg, name in FONTS:
+        data = base64.b64encode(open(os.path.join(NM, '@fontsource-variable', pkg, 'files', name), 'rb').read()).decode()
+        out.append("@font-face{font-family:'%s';font-style:normal;font-weight:200 900;font-display:swap;src:url(data:font/woff2;base64,%s) format('woff2')}" % (family, data))
+    return ''.join(out)
+
+
+def csp_meta():
+    """The same policy as public/_headers, as a <meta> tag, for hosts (GitHub Pages) that cannot send headers.
+    frame-ancestors is not allowed in a meta policy, so it is left out here."""
+    line = next(l for l in read(PUBLIC, '_headers').splitlines() if l.strip().startswith('Content-Security-Policy:'))
+    policy = line.split(':', 1)[1].strip()
+    policy = '; '.join(d.strip() for d in policy.split(';') if d.strip() and not d.strip().startswith('frame-ancestors'))
+    return '<meta http-equiv="Content-Security-Policy" content="%s">\n' % policy
 
 
 def minify(paths):
@@ -45,7 +69,7 @@ def main():
     head = read(SRC, 'head.html')
     shell = read(SRC, 'shell.html').replace('{{LOGO}}', read(SRC, 'logo.svg').strip())
 
-    body = (f'\n<style>{cm_css}</style>\n{shell}'
+    body = (f'\n<style>{font_css()}</style>\n<style>{cm_css}</style>\n{shell}'
             f'<script type="application/json" id="qc-data">{data}</script>\n'
             f'<script type="text/plain" id="sqljs-src">{safe(sqljs)}</script>\n'
             f'<script type="text/plain" id="engine-src">{safe(read(SRC, "engine.js"))}</script>\n'
@@ -62,7 +86,7 @@ def main():
         path = os.path.join(DIST, name)
         shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
     shutil.copytree(PUBLIC, DIST, dirs_exist_ok=True)
-    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() +
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
             '<meta name="description" content="GageQuery: learn SQL by doing. From your first query to a capstone business review on six real-world datasets, every answer checked in your browser.">\n'
             '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n'
