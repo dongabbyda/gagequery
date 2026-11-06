@@ -18,7 +18,7 @@
     "@fontsource-variable/source-sans-3": "5.3.1",
     "@fontsource-variable/source-serif-4": "5.3.1",
     "codemirror": "5.65.16",
-    "sql.js": "1.10.3",
+    "sql.js": "1.15.2",
     "terser": "5.31.6"
   },
   "engines": {
