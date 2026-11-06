@@ -2,7 +2,7 @@
 'use strict';
 var DATA = JSON.parse(document.getElementById('qc-data').textContent);
 var MODS = DATA.modules, DSETS = DATA.datasets, ORDER = DATA.order;
-var EX_BY_ID = {}, MOD_BY_ID = {};
+var EX_BY_ID = Object.create(null), MOD_BY_ID = Object.create(null);   // no prototype, so a URL like #constructor is not a route
 MODS.forEach(function (m) { MOD_BY_ID[m.id] = m; m.exercises.forEach(function (e, i) { e.n = i + 1; e.mod = m; EX_BY_ID[e.id] = e; }); });
 var ALL_EX = []; MODS.forEach(function (m) { m.exercises.forEach(function (e) { ALL_EX.push(e); }); });
 
@@ -28,7 +28,25 @@ var MOD_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent |
 /* ================================================================ storage */
 var KEY = 'gagequery-v1';
 var S = { v: 2, ds: null, progress: {}, drafts: {}, hints: {}, helped: {}, days: {}, reviewed: {} };
-try { var raw = localStorage.getItem(KEY) || localStorage.getItem('querycraft-v1'); if (raw) { var p = JSON.parse(raw); for (var k in p) S[k] = p[k]; migrate(p); } } catch (e) {}
+/* Saved or pasted progress is untrusted text: keep only known keys of the right shape, drop everything else. */
+function cleanState(d) {
+  var out = { v: typeof d.v === 'number' ? d.v : 1, ds: DSETS[d.ds] ? d.ds : null, progress: {}, drafts: {}, hints: {}, helped: {}, days: {}, reviewed: {} };
+  var STATES = { attempted: 1, helped: 1, solved: 1 };
+  function each(o, fn) { if (o && typeof o === 'object' && !Array.isArray(o)) Object.keys(o).forEach(function (k) { fn(k, o[k]); }); }
+  function exKey(k) { var m = /^(m\d\d-e\d\d)(?:@(\w+))?$/.exec(k); return m && EX_BY_ID[m[1]] && (!m[2] || DSETS[m[2]]) ? m[1] : null; }
+  each(d.progress, function (k, v) { if (EX_BY_ID[k] && v && STATES[v.state]) out.progress[k] = { state: v.state, ds: DSETS[v.ds] ? v.ds : 'sales', at: isFinite(v.at) ? +v.at : 0 }; });
+  each(d.helped, function (k, v) { if (EX_BY_ID[k] && v) out.helped[k] = true; });
+  each(d.hints, function (k, v) { if (exKey(k) && v >= 0 && v <= 3) out.hints[k] = Math.floor(v); });
+  each(d.reviewed, function (k, v) { if (EX_BY_ID[k] && isFinite(v)) out.reviewed[k] = +v; });
+  each(d.days, function (k, v) { if (/^\d{4}-\d{2}-\d{2}$/.test(k) && v >= 0 && v < 1e6) out.days[k] = Math.floor(v); });
+  each(d.drafts, function (k, v) {
+    var m = /^(?:(m\d\d-e\d\d)|playground)(?:@(\w+))?$/.exec(k);
+    if (m && (!m[1] || EX_BY_ID[m[1]]) && (!m[2] || DSETS[m[2]]) && typeof v === 'string') out.drafts[k] = v.slice(0, 20000);
+    else if (/^m\d\d-e\d\d@ds$/.test(k) && DSETS[v]) out.drafts[k] = v;
+  });
+  return out;
+}
+try { var raw = localStorage.getItem(KEY) || localStorage.getItem('querycraft-v1'); if (raw) { var p = JSON.parse(raw); var clean = cleanState(p); for (var k in clean) S[k] = clean[k]; migrate(p); } } catch (e) {}
 /* v1 had no version, activity days or review times. Rebuild the days from the time each exercise was last updated. */
 function migrate(old) {
   if ((old.v || 1) < 2) {
@@ -1127,7 +1145,7 @@ function viewProgress() {
   p.appendChild(h('p', { class: 'muted', text: 'Progress is saved in this browser only. Copy it out to keep a backup or move it to another browser.' }));
   var area = h('textarea', { class: 'export', rows: '3', 'aria-label': 'Progress data', spellcheck: 'false' });
   var exportBtn = h('button', { class: 'btn', type: 'button', text: 'Copy progress', onclick: function () { copyText(JSON.stringify({ v: S.v, progress: S.progress, helped: S.helped, hints: S.hints, days: S.days, reviewed: S.reviewed }), exportBtn); } });
-  var importBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Import pasted progress', onclick: function () { try { var d = JSON.parse(area.value); if (!d || typeof d.progress !== 'object') throw 0; S.progress = d.progress || {}; S.helped = d.helped || {}; S.hints = d.hints || S.hints; S.days = d.days || {}; S.reviewed = d.reviewed || {}; migrate(d); save(); toast('Progress imported.'); route(true); } catch (e) { toast('That text is not GageQuery progress. Paste what Copy progress gave you.'); } } });
+  var importBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Import pasted progress', onclick: function () { try { if (area.value.length > 2e6) throw 0; var d = JSON.parse(area.value); if (!d || typeof d.progress !== 'object' || Array.isArray(d.progress)) throw 0; var c = cleanState(d); S.progress = c.progress; S.helped = c.helped; S.hints = c.hints; S.days = c.days; S.reviewed = c.reviewed; migrate(d); save(); toast('Progress imported.'); route(true); } catch (e) { toast('That text is not GageQuery progress. Paste what Copy progress gave you.'); } } });
   var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; S.days = {}; S.reviewed = {}; save(); toast('Progress erased.'); route(true); } });
   p.appendChild(area);
   p.appendChild(h('div', { class: 'actions' }, exportBtn, importBtn, clearBtn));

@@ -65,3 +65,15 @@ def test_built_pages():
     assert len(page.encode()) < 8 * 1024 * 1024
     for f in ('favicon.svg', '_headers', 'robots.txt'):
         assert os.path.exists(os.path.join(ROOT, 'dist', f)), f
+
+
+def test_page_has_no_remote_resources_and_carries_its_own_csp():
+    page = open(need(os.path.join(ROOT, 'dist', 'index.html')), encoding='utf-8').read()
+    assert 'googleapis' not in page and 'gstatic' not in page, 'fonts must be bundled, not loaded from a font host'
+    head = page.split('</head>')[0]
+    assert 'http-equiv="Content-Security-Policy"' in head, 'hosts without header support (GitHub Pages) rely on the meta policy'
+    meta = head.split('http-equiv="Content-Security-Policy" content="')[1].split('"')[0]
+    assert "default-src 'none'" in meta and "script-src 'self' 'unsafe-inline'" in meta and 'frame-ancestors' not in meta
+    assert 'http' not in meta.replace("'self'", ''), 'the policy must not allow any remote origin'
+    headers = open(need(os.path.join(ROOT, 'public', '_headers')), encoding='utf-8').read()
+    assert 'googleapis' not in headers and "frame-ancestors 'none'" in headers

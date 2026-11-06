@@ -86,7 +86,7 @@
   }
   function rewrite(st) {
     var notes = [], t = st;
-    if (/^\s*(ATTACH|DETACH)\b/i.test(t) || /writable_schema/i.test(t)) return { error: 'That command is switched off in GageQuery.' };
+    if (/^\s*(ATTACH|DETACH)\b/i.test(t) || /writable_schema|max_page_count|hard_heap_limit|soft_heap_limit/i.test(t)) return { error: 'That command is switched off in GageQuery.' };
     if (/^\s*USE\s+/i.test(t)) return { sql: null, notes: ['USE is ignored: each dataset is a single database.'] };
     if (/^\s*SHOW\s+TABLES\s*$/i.test(t)) return { sql: "SELECT name AS table_name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name", notes: notes };
     var d = /^\s*(?:DESCRIBE|DESC|SHOW\s+COLUMNS\s+FROM)\s+`?([A-Za-z_]\w*)`?\s*$/i.exec(t);
@@ -122,7 +122,9 @@
     res.ms = Date.now() - t0;
     return res;
   }
-  function fresh(ds) { var d = new SQL.Database(pristine[ds]); register(d); return d; }
+  /* Cap how big a learner's database can grow (about 32 MB), so a runaway INSERT cannot exhaust the browser's memory. */
+  function limit(d) { try { d.exec('PRAGMA max_page_count = 8000'); } catch (e) {} return d; }
+  function fresh(ds) { var d = new SQL.Database(pristine[ds]); register(d); return limit(d); }
   function quiet(db, sql) { if (!sql) return; splitSql(sql).forEach(function (s) { var r = rewrite(s); if (r.sql) try { db.exec(r.sql); } catch (e) {} }); }
 
   function schema(db) {
@@ -187,7 +189,7 @@
           return x;
         }
         case 'snapshot': return { bytes: working[m.ds].export() };
-        case 'restore': { try { working[m.ds].close(); } catch (e) {} working[m.ds] = new SQL.Database(m.bytes); register(working[m.ds]); return { ok: true }; }
+        case 'restore': { try { working[m.ds].close(); } catch (e) {} working[m.ds] = new SQL.Database(m.bytes); register(working[m.ds]); limit(working[m.ds]); return { ok: true }; }
         case 'resetData': { try { working[m.ds].close(); } catch (e) {} working[m.ds] = fresh(m.ds); return { ok: true }; }
         case 'schema': return { tables: schema(working[m.ds]) };
         case 'viz': { var p = new SQL.Database(pristine[m.ds]); var out = viz(p, m.spec); p.close(); return out; }
