@@ -4,12 +4,17 @@
 Every lesson has runnable examples and exercises, and every answer is checked instantly — in the learner's
 own browser, with no server and no sign-up.
 
-- **12 modules** in three phases: Fundamentals → Intermediate SQL & Analytics → Advanced SQL & Optimisation
+- **15 modules** in four phases: a 30-minute start, Fundamentals → Intermediate SQL & Analytics → Advanced SQL &
+  Optimisation → Real-world analysis (Data Cleaning and a six-task capstone business review)
 - **6 real-world datasets**, switchable at any time: Sales (ShopCorp), Sport, Fashion, Politics, Finance, Healthcare
-- **68 examples and 60 exercises**, each written for all six datasets (360 checked exercise variants)
+- **83 examples and 75 exercises**, each written for all six datasets (450 checked exercise variants)
 - **Smart checking:** compares results, not text; catches common mistakes (`= NULL`, fan-out joins, integer
-  division, the `NOT IN` + `NULL` trap); checks views, indexes and transactions by inspecting the database afterwards
-- **Three-level hints**, model answers with explanations, undoable reset, progress export/import, light and dark themes, phone-friendly
+  division, the `NOT IN` + `NULL` trap, a JOIN without ON, a missing GROUP BY); shows which columns, rows and order
+  already match; checks views, indexes and transactions by inspecting the database afterwards
+- **Three-level hints**, expected output, model answers with explanations, undoable reset, progress export/import,
+  light and dark themes, phone-friendly
+- **Motivation and review, all stored locally:** XP and levels, daily and weekly streaks, badges, a skills radar, and a
+  Practice arena that brings back what you found hardest
 
 ## Quick start
 
@@ -18,7 +23,7 @@ Requirements: Node 18+, Python 3.10+ (linked to SQLite 3.39+).
 ```bash
 npm ci
 pip install -r requirements-dev.txt
-python3 -m playwright install chromium   # only needed for browser tests
+python -m playwright install chromium    # only needed for browser tests (python3 on macOS/Linux)
 
 npm run build    # verify all content and build dist/
 npm run serve    # open http://127.0.0.1:8000
@@ -27,7 +32,7 @@ npm test         # content checks + end-to-end browser tests
 
 ## How it works
 
-The build runs every example and model answer against every dataset (768 queries) using Python's SQLite with
+The build runs every example and model answer against every dataset (948 queries) using Python's SQLite with
 the same MySQL compatibility functions the app uses, and refuses to build if anything is off. It then inlines the
 SQL engine ([sql.js](https://github.com/sql-js/sql.js)), the editor ([CodeMirror 5](https://codemirror.net/5/)),
 the course content and all six databases into one page. In the browser the engine runs in a Web Worker with a

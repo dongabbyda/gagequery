@@ -1,6 +1,6 @@
 # GageQuery — notes for Claude Code
 
-GageQuery is an interactive SQL course for beginners: 12 modules, six sector datasets (Sales, Sport, Fashion,
+GageQuery is an interactive SQL course for beginners: 15 modules (0–13 plus a capstone, 14), six sector datasets (Sales, Sport, Fashion,
 Politics, Finance, Healthcare), and exercises that are checked by running SQL **in the learner's browser**.
 There is no backend. The build produces one self-contained HTML page plus a few static files in `dist/`.
 
@@ -12,7 +12,7 @@ plain English, short sentences, business framing, no jargon without a definition
 ```bash
 npm ci                                   # JS build deps (CodeMirror, sql.js, terser) — pinned
 pip install -r requirements-dev.txt      # pytest + Playwright
-python3 -m playwright install chromium   # once, for browser tests
+python -m playwright install chromium    # once, for browser tests (python3 on macOS/Linux)
 
 npm run build        # content (verify every query) + assemble dist/ and the artifact fragment
 npm test             # full suite: content checks + headless browser tests (about 1.5 min)
@@ -31,11 +31,12 @@ npm run data         # regenerate the five generated datasets (only after changi
 | `src/engine.js` | SQL engine in a Web Worker: sql.js (SQLite) + MySQL compatibility shims, check/verify logic |
 | `src/head.html` | `<title>`, fonts, and all CSS (theme tokens, light + dark) |
 | `src/shell.html`, `src/logo.svg` | Static page frame (top bar, rail, palette) |
-| `content/mNN_mNN.py` | Course content, two modules per file: examples + exercises with a variant per dataset |
+| `content/m00.py`, `content/mNN_mNN.py` | Course content (Module 0 alone, then two modules per file): examples + exercises with a variant per dataset. `m13_m14.py` holds Data Cleaning and the capstone |
 | `content/concepts.json` | Concept definitions (term, what, when/why) pulled in by `concept_weeks` |
-| `datasets/*.sql` | The six databases. `sales.sql` (ShopCorp) is hand-written; the other five come from `generate.py` |
+| `datasets/*.sql` | The six databases. `sales.sql` (ShopCorp) is hand-written except its `web_signups` block; the other five come from `generate.py`. Each ends with a deliberately messy sign-up table for Module 13 |
 | `scripts/build_content.py` | Builds `build/content.json`; runs every query on every dataset with Python sqlite3 + the same shims |
 | `scripts/assemble.py` | Inlines everything into `dist/index.html` and `build/gagequery.artifact.html` |
+| `scripts/py.js` | Runs Python for the npm scripts: picks a working interpreter (`py`/`python` on Windows) in UTF-8 mode |
 | `scripts/serve.py` | Local static server that applies `public/_headers` |
 | `public/` | Copied into `dist/` as-is (`_headers` CSP, favicon, robots.txt) |
 | `tests/` | pytest: `test_content.py` (fast) and `test_app.py` (Playwright, marker `browser`) |
@@ -65,7 +66,8 @@ npm run data         # regenerate the five generated datasets (only after changi
    `public/_headers` is what production serves and what the browser tests run under. Do not add `eval`,
    `new Function`, or remote scripts.
 8. **Progress lives in localStorage** under `gagequery-v1` (falls back to the old `querycraft-v1` key). Changing
-   the shape of the saved state needs a migration, not a new key.
+   the shape of the saved state needs a migration, not a new key: bump `S.v` and extend `migrate()` in `src/app.js`.
+   XP, levels, streaks and badges are derived from the saved state, not stored.
 
 ## Writing content
 
