@@ -18,12 +18,14 @@ sys.path.insert(0, ROOT)
 if sqlite3.sqlite_version_info < (3, 39, 0):
     sys.exit('GageQuery needs Python linked to SQLite 3.39 or newer; found %s.' % sqlite3.sqlite_version)
 
+from content.m00 import M0
 from content.m01_m02 import M1, M2
 from content.m03_m04 import M3, M4
 from content.m05_m06 import M5, M6
 from content.m07_m08 import M7, M8
 from content.m09_m10 import M9, M10
 from content.m11_m12 import M11, M12
+from content.m13_m14 import M13, M14
 
 DS = ['sales', 'sport', 'fashion', 'politics', 'finance', 'healthcare']
 META = {
@@ -55,7 +57,7 @@ DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 def pd(s):
     if s is None:
         return None
-    m = re.match(r'(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?', str(s))
+    m = re.match(r'(\d{4})[-/.](\d{2})[-/.](\d{2})(?:[ T](\d{2}):(\d{2}))?', str(s))
     if not m:
         return None
     return dt.datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4] or 0), int(m[5] or 0))
@@ -102,6 +104,12 @@ def connect(name):
 
 def rewrite(st):
     t = st.strip()
+    if re.match(r'SHOW\s+TABLES$', t, re.I):
+        return "SELECT name AS table_name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    m = re.match(r'(?:DESCRIBE|DESC|SHOW\s+COLUMNS\s+FROM)\s+`?([A-Za-z_]\w*)`?$', t, re.I)
+    if m:
+        return ("SELECT name AS Field, type AS Type, CASE WHEN \"notnull\"=1 THEN 'NO' ELSE 'YES' END AS \"Null\", "
+                "CASE WHEN pk>0 THEN 'PRI' ELSE '' END AS \"Key\" FROM pragma_table_info('%s')" % m.group(1))
     t = re.sub(r'^START\s+TRANSACTION', 'BEGIN', t, flags=re.I)
     t = re.sub(r'^EXPLAIN\s+(SELECT|WITH)', r'EXPLAIN QUERY PLAN \1', t, flags=re.I)
     t = re.sub(r'\bAS\s+(?:SIGNED|UNSIGNED)\b', 'AS INTEGER', t, flags=re.I)
@@ -184,9 +192,10 @@ def check_text(rules, sql):
     return bad
 
 
-for mod in (M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12):
+for mod in (M0, M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M14):
     m = dict(id=mod['id'], number=mod['number'], phase=mod['phase'], title=mod['title'], minutes=mod['minutes'],
-             objectives=mod['objectives'], concepts=concepts_for(mod), examples=[], exercises=[])
+             objectives=mod['objectives'], concepts=concepts_for(mod), examples=[], exercises=[],
+             capstone=bool(mod.get('capstone')))
     for i, ex in enumerate(mod['examples'], 1):
         e = dict(id='%s-x%02d' % (mod['id'], i), title=ex['title'], level=ex['level'], explanation=ex['explanation'],
                  tryIt=ex.get('tryIt'), visual=ex.get('visual'), v=ex['v'], ref=bool(ex.get('ref')))
