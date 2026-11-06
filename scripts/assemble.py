@@ -25,7 +25,7 @@ def safe(js):
 
 def minify(paths):
     return subprocess.run(['node', os.path.join(NM, 'terser', 'bin', 'terser'), *paths, '-c', '-m'],
-                          capture_output=True, text=True, check=True).stdout
+                          capture_output=True, text=True, encoding='utf-8', check=True).stdout
 
 
 def main():
@@ -56,12 +56,15 @@ def main():
     frag = head + body
     open(os.path.join(BUILD, 'gagequery.artifact.html'), 'w', encoding='utf-8').write(frag)
 
-    if os.path.isdir(DIST):
-        shutil.rmtree(DIST)
-    shutil.copytree(PUBLIC, DIST)
+    # Empty dist/ rather than deleting it: on Windows a folder held open by a server, editor or sync client cannot be removed.
+    os.makedirs(DIST, exist_ok=True)
+    for name in os.listdir(DIST):
+        path = os.path.join(DIST, name)
+        shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
+    shutil.copytree(PUBLIC, DIST, dirs_exist_ok=True)
     page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
-            '<meta name="description" content="GageQuery: learn SQL by doing. 12 modules, six real-world datasets, every answer checked in your browser.">\n'
+            '<meta name="description" content="GageQuery: learn SQL by doing. From your first query to a capstone business review on six real-world datasets, every answer checked in your browser.">\n'
             '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n'
             + head + '\n</head>\n<body>' + body + '</body>\n</html>\n')
     open(os.path.join(DIST, 'index.html'), 'w', encoding='utf-8').write(page)
