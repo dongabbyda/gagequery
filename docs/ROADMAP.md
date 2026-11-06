@@ -1,19 +1,17 @@
 # Roadmap
 
-Ordered by value to learners per unit of effort. Items 1–5 need no backend.
+Ordered by value to learners per unit of effort. Items 1–2 need no backend.
+
+## Done in 0.13
+
+- Module 0 (start here), Module 13 (Data Cleaning, on a messy sign-up table per dataset) and the capstone (Module 14).
+- LEAD in Module 8; Show expected output; a checklist of what already matches plus structural mistake tips.
+- XP and levels, daily and weekly streaks, badges, a skills radar, and the Practice Arena (all in localStorage).
 
 ## Now
 
-1. **Capstone projects** — one scenario per dataset, ~6 graded tasks each, combining joins, CTEs, window
-   functions, CASE and aggregation. The sidebar and course map already show "Capstone · Next".
-2. **Module 13: Data Cleaning** — TRIM, REPLACE, COALESCE/NULLIF, CAST, de-duplication with ROW_NUMBER,
-   fixing inconsistent text and dates. Needs a deliberately messy table per dataset (add in `generate.py`).
-3. **Gaps in existing modules** — LEAD (alongside LAG in M8), UNPIVOT via UNION ALL (M9).
-4. **Show expected output** button in the exercise workspace (the model result is already computed on check).
-5. **Motivation layer, stored locally** — XP by level (Easy 50 / Medium 100 / Hard 200), daily streak, badges
-   (first query, module complete, all windows done), a skills radar on the Progress page.
-6. **Practice Arena** — mixed-topic review drawn from completed modules, weighted toward exercises that needed
-   hints or failed first.
+1. **Gaps in existing modules** — UNPIVOT via UNION ALL (M9).
+2. **More capstone scenarios** — a second business review per dataset, so the capstone can be repeated.
 
 ## Hosting polish
 

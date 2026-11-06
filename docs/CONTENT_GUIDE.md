@@ -76,6 +76,15 @@ The datasets contain rows that make classic mistakes visible. Exercises rely on 
 | Finance | 28 customers with no loans; 11 NULL credit scores; unpaid repayments (`paid_date` NULL); manager hierarchy |
 | Healthcare | patients 149–160 never seen; doctor `supervisor_id` hierarchy |
 
+Every dataset also ends with a raw sign-up table for Module 13 (`web_signups`, `fan_signups`, `newsletter_signups`,
+`volunteer_signups`, `loan_applications`, `patient_intake`), built by `messy()` in `datasets/generate.py` with its own
+seed: 45 rows, with stray spaces, mixed case, doubled inner spaces, five phone formats, `/` and `.` date separators,
+money as text with symbols and commas, 3 blank and 2 NULL emails, 3 typo and 2 missing lookup labels, 7 missing
+amounts, and 9 duplicate sign-ups (one person three times). Names are ASCII only, because SQLite's `UPPER`/`LOWER`
+fold ASCII letters only. Comparisons on expressions lose the column's NOCASE collation in SQLite but not in MySQL,
+so cleaning tasks always tell the learner to normalise case with `LOWER`/`UPPER`. The checker ignores case and outer
+spaces, so tasks that are about `TRIM`/`UPPER`/`LOWER` use `require` rules.
+
 ## Checklist
 
 1. `npm run build` → `problems 0` (fix row counts, columns, ordering, rule conflicts it reports)

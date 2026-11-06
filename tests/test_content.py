@@ -9,7 +9,7 @@ DATASETS = ['sales', 'sport', 'fashion', 'politics', 'finance', 'healthcare']
 def test_every_query_verified():
     report = json.load(open(need(os.path.join(BUILD, 'verify_report.json')), encoding='utf-8'))
     assert report['problems'] == [], '\n'.join(report['problems'])
-    assert report['modules'] == 12 and report['datasets'] == len(DATASETS)
+    assert report['modules'] == 15 and report['datasets'] == len(DATASETS)
     assert report['queries_checked'] == (report['examples'] + report['exercises']) * len(DATASETS)
 
 
@@ -31,6 +31,22 @@ def test_ids_unique_and_every_exercise_has_all_six_datasets(content):
             assert sorted(e['v']) == sorted(DATASETS), e['id']
             for ds, v in e['v'].items():
                 assert v.get('sql', '').strip(), '%s %s has no model answer' % (e['id'], ds)
+
+
+STAGING = {'sales': 'web_signups', 'sport': 'fan_signups', 'fashion': 'newsletter_signups', 'politics': 'volunteer_signups',
+           'finance': 'loan_applications', 'healthcare': 'patient_intake'}
+
+
+def test_every_dataset_has_its_messy_signup_table(content):
+    # Module 13 depends on these raw import tables and on the planted problems in them.
+    for ds, table in STAGING.items():
+        assert content['datasets'][ds]['rowCounts'].get(table) == 45, ds
+
+
+def test_capstone_and_start_modules(content):
+    mods = {m['id']: m for m in content['modules']}
+    assert mods['m00']['number'] == 0 and mods['m14']['capstone'] and not mods['m13']['capstone']
+    assert len(mods['m14']['exercises']) == 6 and not mods['m14']['examples']
 
 
 def test_generated_datasets_are_reproducible(tmp_path):

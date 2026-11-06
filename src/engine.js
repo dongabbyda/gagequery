@@ -12,7 +12,7 @@
   function pad(n, w) { n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; }
   function pd(s) {
     if (s == null) return null;
-    var m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(s));
+    var m = /^(\d{4})[-\/.](\d{2})[-\/.](\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(s));
     if (!m) return null;
     return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)));
   }
@@ -177,6 +177,14 @@
           if (!exp.error && m.verify) exp = exec(b, m.verify, 0);
           a.close(); b.close();
           return { mine: mine, expected: exp };
+        }
+        case 'expected': {
+          var e = fresh(m.ds);
+          quiet(e, m.pre);
+          var x = exec(e, m.solution, 0);
+          if (!x.error && m.verify) x = exec(e, m.verify, 0);
+          e.close();
+          return x;
         }
         case 'snapshot': return { bytes: working[m.ds].export() };
         case 'restore': { try { working[m.ds].close(); } catch (e) {} working[m.ds] = new SQL.Database(m.bytes); register(working[m.ds]); return { ok: true }; }

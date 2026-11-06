@@ -4,13 +4,14 @@
   <label class="ds-pick"><span>Dataset</span><select id="ds-select" aria-label="Dataset"></select></label>
   <span class="sp"></span>
   <div class="meter"><i><u id="meter-bar"></u></i><span id="meter-text"></span></div>
+  <button id="theme-btn" class="top-btn theme-btn" type="button"><span id="theme-ico" aria-hidden="true"></span><span id="theme-txt"></span></button>
   <span id="engine" class="engine">Loading engine</span>
-  <button id="pal-btn" class="top-btn" type="button" aria-label="Find anything (Ctrl or Command + K)">Find ⌘K</button>
+  <button id="pal-btn" class="top-btn" type="button" aria-label="Search modules, exercises and pages (Ctrl or Command + K)">Search<span class="kbd-chip" id="pal-kbd" aria-hidden="true">Ctrl K</span></button>
 </header>
 <div class="shell">
   <nav id="rail" class="rail" aria-label="Modules"></nav>
   <main id="main"><div class="page"><p class="muted">Loading GageQuery…</p></div></main>
 </div>
 <div id="scrim" class="scrim"></div>
-<div id="palette" class="palette" hidden><div class="pal-box" role="dialog" aria-label="Find anything"><input id="pal-input" type="text" placeholder="Jump to a module, exercise, page or dataset" autocomplete="off"><ul id="pal-list" role="listbox"></ul></div></div>
+<div id="palette" class="palette" hidden><div class="pal-box" role="dialog" aria-modal="true" aria-label="Search"><input id="pal-input" type="text" aria-label="Search modules, exercises, pages and datasets" placeholder="Jump to a module, exercise, page or dataset" autocomplete="off"><ul id="pal-list" role="listbox"></ul></div></div>
 <div id="toasts"></div>

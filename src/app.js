@@ -8,7 +8,10 @@ var ALL_EX = []; MODS.forEach(function (m) { m.exercises.forEach(function (e) { 
 
 /* ================================================================ helpers */
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function md(s) { return esc(s || '').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'); }
+function md(s) {
+  return esc(s || '').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s"(])\*(\w[^*\n]*?\w|\w)\*(?=[\s.,;:!?")]|$)/g, '$1<em>$2</em>');   // *word* italics; leaves COUNT(*) and SELECT * alone
+}
 function h(tag, attrs) {
   var el = document.createElement(tag);
   if (attrs) for (var k in attrs) {
@@ -20,24 +23,91 @@ function h(tag, attrs) {
   return el;
 }
 function $(sel, root) { return (root || document).querySelector(sel); }
+var MOD_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl';
 
 /* ================================================================ storage */
 var KEY = 'gagequery-v1';
-var S = { ds: null, progress: {}, drafts: {}, hints: {}, helped: {} };
-try { var raw = localStorage.getItem(KEY) || localStorage.getItem('querycraft-v1'); if (raw) { var p = JSON.parse(raw); for (var k in p) S[k] = p[k]; } } catch (e) {}
+var S = { v: 2, ds: null, progress: {}, drafts: {}, hints: {}, helped: {}, days: {}, reviewed: {} };
+try { var raw = localStorage.getItem(KEY) || localStorage.getItem('querycraft-v1'); if (raw) { var p = JSON.parse(raw); for (var k in p) S[k] = p[k]; migrate(p); } } catch (e) {}
+/* v1 had no version, activity days or review times. Rebuild the days from the time each exercise was last updated. */
+function migrate(old) {
+  if ((old.v || 1) < 2) {
+    S.days = S.days || {}; S.reviewed = S.reviewed || {};
+    for (var id in S.progress) { var at = S.progress[id] && S.progress[id].at; if (at) { var d = dayKey(new Date(at)); S.days[d] = (S.days[d] || 0) + 1; } }
+    S.v = 2;
+  }
+}
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+/* Streaks follow the learner's real calendar; the datasets' fixed "today" (2025-12-31) is only for query answers. */
+function dayKey(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function markActive() { var d = dayKey(new Date()); S.days[d] = (S.days[d] || 0) + 1; save(); }
 function curDs() { return S.ds && DSETS[S.ds] ? S.ds : 'sales'; }
 function exState(id) { return (S.progress[id] || {}).state || 'new'; }
 function setState(id, st) {
   var cur = exState(id);
   var rank = { 'new': 0, attempted: 1, helped: 2, solved: 3 };
+  var before = earned(), lvl = level().n;
   if (rank[st] > rank[cur] || (st === 'solved' && cur === 'helped' && !S.helped[id])) S.progress[id] = { state: st, ds: curDs(), at: Date.now() };
   save(); paintRail(); paintMeter();
+  earned().forEach(function (b) { if (before.indexOf(b) < 0) toast('Badge earned: ' + BADGES.filter(function (x) { return x.id === b; })[0].name); });
+  if (level().n > lvl) toast('Level up! You are now ' + level().name + '.');
 }
-var POINTS = { Easy: 10, Medium: 20, Hard: 40 };
-function points() { var t = 0; ALL_EX.forEach(function (e) { var s = exState(e.id); if (s === 'solved') t += POINTS[e.level]; else if (s === 'helped') t += POINTS[e.level] / 2; }); return t; }
-function modDone(m) { var n = 0; m.exercises.forEach(function (e) { var s = exState(e.id); if (s === 'solved' || s === 'helped') n++; }); return n; }
-function modComplete(m) { return m.exercises.every(function (e) { return e.level === 'Hard' || exState(e.id) === 'solved' || exState(e.id) === 'helped'; }); }
+
+/* ---------------------------------------------------------------- XP, levels, streaks, badges (all derived from S) */
+var XP = { Easy: 50, Medium: 100, Hard: 200 };
+function isDone(id) { var s = exState(id); return s === 'solved' || s === 'helped'; }
+function xpFor(e) { var s = exState(e.id); return s === 'solved' ? XP[e.level] : s === 'helped' ? XP[e.level] / 2 : 0; }
+function xp() { var t = 0; ALL_EX.forEach(function (e) { t += xpFor(e); }); return t; }
+var LEVELS = [[0, 'Beginner'], [300, 'Explorer'], [1000, 'Query Writer'], [2500, 'Analyst'], [4500, 'Senior Analyst'], [7000, 'SQL Expert']];
+function level() {
+  var t = xp(), i = 0; while (i + 1 < LEVELS.length && t >= LEVELS[i + 1][0]) i++;
+  var next = LEVELS[i + 1];
+  return { n: i + 1, name: LEVELS[i][1], xp: t, from: LEVELS[i][0], to: next ? next[0] : null, nextName: next ? next[1] : null };
+}
+function streaks() {
+  var days = S.days || {}, today = new Date(), d = new Date(today), cur = 0;
+  if (!days[dayKey(d)]) d.setDate(d.getDate() - 1);          // a streak is still alive until the end of today
+  while (days[dayKey(d)]) { cur++; d.setDate(d.getDate() - 1); }
+  var keys = Object.keys(days).sort(), best = 0, run = 0, prev = null;
+  keys.forEach(function (k) { var t = new Date(k + 'T12:00:00'); run = prev && Math.round((t - prev) / 864e5) === 1 ? run + 1 : 1; best = Math.max(best, run); prev = t; });
+  function week(x) { var t = new Date(x); t.setHours(12, 0, 0, 0); t.setDate(t.getDate() - (t.getDay() + 6) % 7); return dayKey(t); }   // Monday of x's week
+  var weeks = {}; keys.forEach(function (k) { weeks[week(new Date(k + 'T12:00:00'))] = 1; });
+  var w = new Date(today), wk = 0; if (!weeks[week(w)]) w.setDate(w.getDate() - 7);
+  while (weeks[week(w)]) { wk++; w.setDate(w.getDate() - 7); }
+  return { daily: cur, best: Math.max(best, cur), weekly: wk, activeDays: keys.length };
+}
+function modById(id) { return MOD_BY_ID[id]; }
+function allDone(ids) { return ids.every(function (id) { return modById(id) && modById(id).exercises.every(function (e) { return isDone(e.id); }); }); }
+function cleanSolves() { return ALL_EX.filter(function (e) { return exState(e.id) === 'solved' && !ORDER.some(function (d) { return S.hints[e.id + '@' + d]; }); }).length; }
+var BADGES = [
+  { id: 'first', name: 'First query', how: 'Solve your first exercise.', test: function () { return ALL_EX.some(function (e) { return isDone(e.id); }); } },
+  { id: 'ten', name: 'Ten correct answers', how: 'Solve 10 exercises.', test: function () { return ALL_EX.filter(function (e) { return isDone(e.id); }).length >= 10; } },
+  { id: 'fifty', name: 'Fifty correct answers', how: 'Solve 50 exercises.', test: function () { return ALL_EX.filter(function (e) { return isDone(e.id); }).length >= 50; } },
+  { id: 'nohints', name: 'On my own', how: 'Solve 10 exercises without a hint or the solution.', test: function () { return cleanSolves() >= 10; } },
+  { id: 'joins', name: 'Join builder', how: 'Solve every exercise in Module 4.', test: function () { return allDone(['m04']); } },
+  { id: 'windows', name: 'Window wizard', how: 'Solve every exercise in Modules 7 and 8.', test: function () { return allDone(['m07', 'm08']); } },
+  { id: 'cleaner', name: 'Data cleaner', how: 'Solve every exercise in Module 13.', test: function () { return allDone(['m13']); } },
+  { id: 'capstone', name: 'Business reviewer', how: 'Solve every capstone task.', test: function () { return allDone(['m14']); } },
+  { id: 'datasets', name: 'Sector hopper', how: 'Solve exercises on three different datasets.', test: function () { var u = {}; ALL_EX.forEach(function (e) { if (isDone(e.id)) u[S.progress[e.id].ds] = 1; }); return Object.keys(u).length >= 3; } },
+  { id: 'streak', name: 'Seven-day streak', how: 'Practise on 7 days in a row.', test: function () { return streaks().best >= 7; } },
+  { id: 'master', name: 'Master analyst', how: 'Solve every exercise in the course.', test: function () { return ALL_EX.every(function (e) { return isDone(e.id); }); } }
+];
+function earned() { return BADGES.filter(function (b) { return b.test(); }).map(function (b) { return b.id; }); }
+function modDone(m) { var n = 0; m.exercises.forEach(function (e) { if (isDone(e.id)) n++; }); return n; }
+function nextExercise() { return ALL_EX.filter(function (e) { return !isDone(e.id); })[0] || null; }
+function modName(m) { return m.capstone ? 'Capstone' : 'Module ' + m.number; }
+function exName(e) { return (e.mod.capstone ? 'Task ' : 'Exercise ') + e.n; }
+/* One status per module, used by the course map, module pages and the home dashboard. */
+function modStatus(m) {
+  var nx = nextExercise();
+  if (modComplete(m)) return { key: 'done', label: modDone(m) === m.exercises.length ? 'Complete' : 'Complete · Hard left' };
+  if (nx && nx.mod === m) return { key: 'next', label: 'Up next' };
+  if (m.exercises.some(function (e) { return exState(e.id) !== 'new'; })) return { key: 'going', label: 'In progress' };
+  return { key: 'todo', label: 'Not started' };
+}
+function statusChip(m) { var s = modStatus(m); return h('span', { class: 'status ' + s.key, text: (s.key === 'done' ? '✓ ' : '') + s.label }); }
+function hoursText(m) { return m.minutes < 60 ? m.minutes + ' min' : 'about ' + Math.round(m.minutes / 60) + ' h'; }
+function modComplete(m) { return m.exercises.every(function (e) { return e.level === 'Hard' || isDone(e.id); }); }
 
 /* ================================================================ engine (worker with timeout, main-thread fallback) */
 var Engine = (function () {
@@ -219,7 +289,50 @@ function mistakeTips(learner, solution, cmp) {
   if (cmp && cmp.kind === 'duplicates') tips.push('Some rows appear more than once. A join can repeat a row once per match (fan-out). Check your join, or use DISTINCT or GROUP BY.');
   if (cmp && cmp.kind === 'values' && /\b\d+\s*\/\s*\d+\b/.test(L.replace(/\d+\.\d+/g, ''))) tips.push('Dividing two whole numbers can drop the decimals in some databases. Multiply by <code>100.0</code> or <code>1.0</code> first.');
   if (cmp && (cmp.kind === 'values' || cmp.kind === 'extra' || cmp.kind === 'missing') && /ROUND\(/i.test(solution) && !/ROUND\(/i.test(L)) tips.push('The task asks for rounding. Wrap the value in <code>ROUND(value, decimals)</code>.');
-  return tips;
+  /* structural mistakes: compare the shape of the learner's query with the model answer */
+  var M = solution.replace(/--[^\n]*/g, ''), kind = cmp && cmp.kind, rowsOff = kind === 'values' || kind === 'extra' || kind === 'missing' || kind === 'duplicates';
+  function both(re) { return re.test(M) && !re.test(L); }
+  var joins = (L.match(/\bJOIN\b/gi) || []).length - (L.match(/\bCROSS\s+JOIN\b/gi) || []).length, ons = (L.match(/\b(ON|USING)\b/gi) || []).length;
+  if (joins > ons) tips.push('A JOIN is missing its <code>ON</code> condition, so every row was paired with every row of the other table. Add <code>ON a.key = b.key</code> to each JOIN.');
+  if (rowsOff && both(/\bGROUP\s+BY\b/i) && /\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/i.test(L) && !/\bOVER\s*\(/i.test(L)) tips.push('The answer has one row per group, but your query has no <code>GROUP BY</code>, so the totals were squeezed into one row. Add GROUP BY with every column that is not inside COUNT, SUM or AVG. A MySQL server would reject this query.');
+  if (kind === 'extra' && both(/\bWHERE\b/i)) tips.push('The answer leaves some rows out. Find the condition in the task and add a <code>WHERE</code> clause.');
+  if (kind === 'extra' && both(/\bHAVING\b/i)) tips.push('The answer keeps only some of the groups. Filter groups after GROUP BY with <code>HAVING</code>.');
+  if (kind === 'extra' && both(/\bLIMIT\b/i)) tips.push('The task asks for the top rows only. Sort with ORDER BY, then add <code>LIMIT</code>.');
+  if (kind === 'order' && !/\bORDER\s+BY\b/i.test(L)) tips.push('Your query has no <code>ORDER BY</code>, so rows come back in whatever order is quickest. Add ORDER BY with the sort the task asks for.');
+  else if (kind === 'order' && both(/\bDESC\b/i)) tips.push('The task wants the highest values first. Add <code>DESC</code> after that column in ORDER BY.');
+  if (rowsOff && both(/\bCOUNT\s*\(\s*DISTINCT\b/i) && /\bCOUNT\s*\(/i.test(L)) tips.push('A join can repeat the same id, so <code>COUNT(column)</code> counts it more than once. Try <code>COUNT(DISTINCT column)</code>.');
+  if (kind && kind !== 'columns' && kind !== 'no-rows' && both(/\bOVER\s*\(/i)) tips.push('This task needs a window function, such as <code>RANK() OVER (...)</code>, <code>LAG(...) OVER (...)</code> or <code>SUM(...) OVER ()</code>.');
+  if (rowsOff && both(/\bTRIM\s*\(/i)) tips.push('Some values have spaces at the start or end. Wrap them in <code>TRIM()</code> before you compare or group them.');
+  if (rowsOff && both(/\b(LOWER|UPPER)\s*\(/i)) tips.push('The same value is typed in different cases. Compare <code>LOWER(...)</code> of both sides, or group on it.');
+  return tips.slice(0, 3);
+}
+/* What is already right: one line per check, so a near miss does not look like a total failure. */
+function checklist(mine, exp, cmp) {
+  var out = [], ok = mine.cols.length === exp.cols.length;
+  out.push({ ok: ok, text: ok ? 'Right number of columns (' + exp.cols.length + ')' : exp.cols.length + ' columns expected, yours has ' + mine.cols.length });
+  if (!ok) return out;
+  var rows = mine.total === exp.total;
+  out.push({ ok: rows, text: rows ? 'Right number of rows (' + exp.total + ')' : exp.total + ' rows expected, yours has ' + mine.total });
+  var cols = exp.cols.map(function (c, i) {
+    var a = mine.rows.map(function (r) { return key([r[i]]); }).sort(), b = exp.rows.map(function (r) { return key([r[i]]); }).sort();
+    return { name: mine.cols[i], ok: a.length === b.length && a.every(function (x, j) { return x === b[j]; }) };
+  });
+  out.push({ ok: cols.every(function (c) { return c.ok; }), cols: cols });
+  if (cmp.kind === 'order') out.push({ ok: false, text: 'The rows are right but in a different order' });
+  return out;
+}
+function renderChecklist(items) {
+  var ul = h('ul', { class: 'checklist', 'aria-label': 'What matches the answer' });
+  items.forEach(function (it) {
+    var li = h('li', { class: it.ok ? 'ok' : 'no' }, h('span', { class: 'ck', 'aria-hidden': 'true', text: it.ok ? '✓' : '✗' }));
+    if (it.cols) {
+      li.appendChild(h('span', { class: 'sr-only', text: it.ok ? 'All column values match. ' : 'Some column values differ. ' }));
+      li.appendChild(h('span', { text: 'Column values: ' }));
+      it.cols.forEach(function (c) { li.appendChild(h('code', { class: c.ok ? 'c-ok' : 'c-no', title: c.ok ? 'matches the answer' : 'differs from the answer', text: (c.ok ? '✓ ' : '✗ ') + c.name })); });
+    } else li.appendChild(h('span', { text: it.text }));
+    ul.appendChild(li);
+  });
+  return ul;
 }
 
 /* ================================================================ editor */
@@ -364,8 +477,8 @@ function renderViz(kind, ds, host) {
 function defs() { return '<defs><marker id="qc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="v-arrow"/></marker></defs>'; }
 
 /* ================================================================ layout pieces */
-var PHASES = {1: 'Phase 1 \u00b7 Fundamentals', 2: 'Phase 2 \u00b7 Intermediate SQL and analytics', 3: 'Phase 3 \u00b7 Advanced SQL and optimisation'};
-var SHORT = {1: 'Getting started', 2: 'Cleaning up results', 3: 'Summarising data', 4: 'Joins', 5: 'Subqueries', 6: 'CTEs and set operations', 7: 'Ranking windows', 8: 'Time-series windows', 9: 'Pivots, dates, strings', 10: 'Views and procedures', 11: 'Indexes and tuning', 12: 'Transactions'};
+var PHASES = {1: 'Phase 1 \u00b7 Fundamentals', 2: 'Phase 2 \u00b7 Intermediate SQL and analytics', 3: 'Phase 3 \u00b7 Advanced SQL and optimisation', 4: 'Phase 4 \u00b7 Real-world analysis'};
+var SHORT = {0: 'Start here', 1: 'Getting started', 13: 'Data cleaning', 14: 'Capstone',2: 'Cleaning up results', 3: 'Summarising data', 4: 'Joins', 5: 'Subqueries', 6: 'CTEs and set operations', 7: 'Ranking windows', 8: 'Time-series windows', 9: 'Pivots, dates, strings', 10: 'Views and procedures', 11: 'Indexes and tuning', 12: 'Transactions'};
 var rail, main, routeId = null;
 function badge(level) { return h('span', { class: 'badge ' + level.toLowerCase(), text: level }); }
 function stateChip(id) {
@@ -376,7 +489,7 @@ function paintMeter() {
   var done = ALL_EX.filter(function (e) { var s = exState(e.id); return s === 'solved' || s === 'helped'; }).length;
   var bar = $('#meter-bar'), txt = $('#meter-text');
   if (bar) bar.style.width = (100 * done / ALL_EX.length) + '%';
-  if (txt) txt.textContent = done + '/' + ALL_EX.length + ' solved \u00b7 ' + points() + ' pts';
+  if (txt) txt.textContent = done + '/' + ALL_EX.length + ' solved \u00b7 ' + xp() + ' XP';
 }
 function paintRail() {
   if (!rail) return;
@@ -390,10 +503,10 @@ function paintRail() {
   MODS.forEach(function (m) {
     if (m.phase !== lastPhase) { rail.appendChild(h('div', { class: 'rail-sec', text: PHASES[m.phase] })); lastPhase = m.phase; }
     var n = modDone(m);
-    rail.appendChild(link(m.id, h('span', { class: 'rl' }, h('b', { text: m.number }), h('span', { text: SHORT[m.number] || m.title.split(':')[0] })), h('span', { class: 'cnt' + (n === m.exercises.length ? ' full' : ''), text: n + '/' + m.exercises.length })));
+    rail.appendChild(link(m.id, h('span', { class: 'rl' }, h('b', { text: m.capstone ? '★' : m.number }), h('span', { text: SHORT[m.number] || m.title.split(':')[0] })), h('span', { class: 'cnt' + (n === m.exercises.length ? ' full' : ''), text: (n === m.exercises.length ? '✓ ' : '') + n + '/' + m.exercises.length })));
   });
-  rail.appendChild(h('span', { class: 'rail-soon' }, h('b', { text: '\u2605' }), h('span', { text: 'Capstone project' }), h('em', { text: 'Next' })));
   rail.appendChild(h('div', { class: 'rail-sec', text: 'Practice' }));
+  rail.appendChild(link('practice', 'Practice arena'));
   rail.appendChild(link('playground', 'Playground'));
   rail.appendChild(link('progress', 'My progress'));
   rail.appendChild(link('about', 'How it works'));
@@ -419,55 +532,103 @@ function setDs(ds, silent) {
 /* ================================================================ views */
 function page(cls) { return h('div', { class: 'page ' + (cls || '') }); }
 
-function viewHome() {
-  var p = page('home');
-  var ds = curDs();
-  p.appendChild(h('section', { class: 'hero' },
-    h('div', { class: 'eyebrow', text: '12-module SQL course \u00b7 MySQL syntax' }),
-    h('h1', { text: 'Learn SQL on data you actually care about.' }),
-    h('p', { class: 'lede', text: 'Pick a sector, then read a short concept, run real examples and solve exercises against a real database in your browser. Every answer is checked by running it.' })));
-  var next = ALL_EX.filter(function (e) { var s = exState(e.id); return s !== 'solved' && s !== 'helped'; })[0];
-  var started = ALL_EX.some(function (e) { return exState(e.id) !== 'new'; });
-  p.appendChild(h('div', { class: 'cta-row' },
-    next ? h('a', { class: 'btn primary lg', href: '#' + (started ? next.id : 'm01'), text: started ? 'Continue: Module ' + next.mod.number + ', exercise ' + next.n : 'Start Module 1' }) : h('a', { class: 'btn primary lg', href: '#progress', text: 'See your progress' }),
-    h('a', { class: 'btn lg', href: '#playground', text: 'Open the playground' })));
-  p.appendChild(h('h2', { text: '1. Choose your dataset' }));
-  p.appendChild(h('p', { class: 'muted', text: 'Every example and exercise exists on every dataset. You can switch at any time from the top bar.' }));
+function datasetGrid(ds) {
   var grid = h('div', { class: 'ds-grid' });
   ORDER.forEach(function (id) {
     var d = DSETS[id], on = id === ds;
     grid.appendChild(h('button', { class: 'ds-card' + (on ? ' on' : ''), type: 'button', 'aria-pressed': on ? 'true' : 'false', onclick: function () { setDs(id); } },
-      h('span', { class: 'ds-sector', text: d.sector }), h('b', { text: d.name }), h('span', { class: 'ds-story', text: d.story.split('. ')[0] + '.' }),
-      h('span', { class: 'ds-meta', text: Object.keys(d.rowCounts).length + ' tables \u00b7 ' + Object.values(d.rowCounts).reduce(function (a, b) { return a + b; }, 0).toLocaleString() + ' rows' })));
+      h('span', { class: 'ds-sector', text: d.sector + (on ? ' · in use' : '') }), h('b', { text: d.name }), h('span', { class: 'ds-story', text: d.story.split('. ')[0] + '.' }),
+      h('span', { class: 'ds-meta', text: Object.keys(d.rowCounts).length + ' tables · ' + Object.values(d.rowCounts).reduce(function (a, b) { return a + b; }, 0).toLocaleString() + ' rows' })));
   });
-  p.appendChild(grid);
+  return grid;
+}
+
+function welcomePanel(next) {
+  var done = ALL_EX.filter(function (e) { return isDone(e.id); }).length, pct = Math.round(100 * done / ALL_EX.length);
+  var lv = level(), st = streaks(), review = reviewQueue().filter(function (it) { return it.w >= 2; }).length;
+  var main = h('div', { class: 'welcome-main' });
+  if (next) {
+    main.appendChild(h('span', { class: 'lbl', text: 'Up next · ' + modName(next.mod) + ' · ' + exName(next) }));
+    main.appendChild(h('h2', { text: next.mod.title }));
+    main.appendChild(h('p', { class: 'next-task', html: md(next.v[curDs()].task) }));
+    main.appendChild(h('div', { class: 'actions' },
+      h('a', { class: 'btn primary lg', href: '#' + next.id, text: 'Continue with ' + exName(next).toLowerCase() }),
+      review ? h('a', { class: 'btn lg', href: '#practice', text: 'Review ' + review + ' tricky exercise' + (review === 1 ? '' : 's') }) : h('a', { class: 'btn lg', href: '#' + next.mod.id, text: 'Open ' + modName(next.mod) })));
+  } else {
+    main.appendChild(h('span', { class: 'lbl', text: 'Course complete' }));
+    main.appendChild(h('h2', { text: 'You have solved every exercise.' }));
+    main.appendChild(h('p', { class: 'next-task', text: 'Keep your skills sharp in the practice arena, or try the exercises again on a different dataset.' }));
+    main.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary lg', href: '#practice', text: 'Open the practice arena' }), h('a', { class: 'btn lg', href: '#progress', text: 'See your progress' })));
+  }
+  var lvPct = lv.to ? Math.round(100 * (lv.xp - lv.from) / (lv.to - lv.from)) : 100;
+  var side = h('div', { class: 'welcome-side' },
+    h('div', { class: 'ring-row' }, h('span', { class: 'ring', style: '--p:' + pct, role: 'img', 'aria-label': pct + ' percent of the course solved', text: pct + '%' }),
+      h('div', null, h('b', { text: done + ' of ' + ALL_EX.length + ' exercises' }), h('div', { class: 'muted sm', text: 'solved across ' + MODS.length + ' modules' }))),
+    h('div', { class: 'kv' }, h('span', { text: 'Level ' + lv.n + ' · ' + lv.name }), h('b', { text: lv.xp + ' XP' })),
+    h('span', { class: 'bar', role: 'progressbar', 'aria-label': 'Progress to the next level', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(lvPct) }, h('i', { style: 'width:' + lvPct + '%' })),
+    h('div', { class: 'kv' }, h('span', { text: 'Daily streak' }), h('b', { text: st.daily + (st.daily === 1 ? ' day' : ' days') })),
+    h('div', { class: 'kv' }, h('span', { text: 'Dataset' }), h('a', { href: '#datasets', text: DSETS[curDs()].name })));
+  return h('section', { class: 'welcome', 'aria-label': 'Your progress' }, main, side);
+}
+
+function viewHome() {
+  var p = page('home');
+  var ds = curDs();
+  var next = nextExercise();
+  var started = ALL_EX.some(function (e) { return exState(e.id) !== 'new'; });
+  if (started) {
+    p.appendChild(h('div', { class: 'eyebrow', text: 'Your dashboard' }));
+    p.appendChild(h('h1', { text: 'Welcome back' }));
+    p.appendChild(welcomePanel(next));
+    p.appendChild(h('div', { class: 'section-head' }, h('h2', { text: 'Your dataset' }), h('span', { class: 'sp' }), h('a', { href: '#datasets', text: 'Compare datasets' })));
+    p.appendChild(h('p', { class: 'muted', text: 'Every example and exercise exists on every dataset, so switching gives you fresh practice with the same skills.' }));
+    p.appendChild(datasetGrid(ds));
+    return p;
+  }
+  p.appendChild(h('section', { class: 'hero' },
+    h('div', { class: 'eyebrow', text: 'SQL course from first query to capstone · MySQL syntax' }),
+    h('h1', { text: 'Learn SQL on data you actually care about.' }),
+    h('p', { class: 'lede', text: 'Pick a sector, then read a short concept, run real examples and solve exercises against a real database in your browser. Every answer is checked by running it.' })));
+  p.appendChild(h('div', { class: 'cta-row' },
+    h('a', { class: 'btn primary lg', href: '#' + MODS[0].id, text: 'Start the course' }),
+    h('a', { class: 'btn lg', href: '#playground', text: 'Try the playground' })));
+  p.appendChild(h('ol', { class: 'steps', 'aria-label': 'How GageQuery works' },
+    h('li', null, h('b', { text: 'Read a short concept' }), h('span', { text: 'Plain-English explanations of what each part of SQL does and when analysts use it.' })),
+    h('li', null, h('b', { text: 'Run real examples' }), h('span', { text: 'Edit and run every query against a real database. Nothing you do can break it.' })),
+    h('li', null, h('b', { text: 'Solve business questions' }), h('span', { text: 'Every answer is checked by running it, with hints when you are stuck.' }))));
+  p.appendChild(h('h2', { text: '1. Choose your dataset' }));
+  p.appendChild(h('p', { class: 'muted', text: 'Every example and exercise exists on every dataset. You can switch at any time from the top bar.' }));
+  p.appendChild(datasetGrid(ds));
   p.appendChild(h('h2', { text: '2. Run your first query' }));
   var first = { sales: 'SELECT * FROM customers LIMIT 5;', sport: 'SELECT * FROM players LIMIT 5;', fashion: 'SELECT * FROM products LIMIT 5;', politics: 'SELECT * FROM parties;', finance: 'SELECT * FROM loans LIMIT 5;', healthcare: 'SELECT * FROM doctors LIMIT 5;' }[ds];
-  p.appendChild(runCell({ sql: first, explanation: 'Press Run (or Ctrl/\u2318 + Enter). SELECT * means "every column", FROM names the table, and LIMIT 5 keeps the first five rows.' }, ds, { autorun: true }));
+  p.appendChild(runCell({ sql: first, explanation: 'Press Run (or ' + MOD_KEY + ' + Enter). SELECT * means "every column", FROM names the table, and LIMIT 5 keeps the first five rows.' }, ds, { autorun: true }));
+  p.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + MODS[0].id, text: 'Next: start Module 0' })));
   return p;
 }
 
 function viewMap() {
   var p = page();
   p.appendChild(h('div', { class: 'eyebrow', text: 'Course map' }));
-  p.appendChild(h('h1', { text: 'Twelve modules, three phases' }));
-  p.appendChild(h('p', { class: 'lede', text: 'Each module has short concepts, runnable examples and five exercises: two Easy, two Medium, one Hard. A module is complete when its Easy and Medium exercises are solved.' }));
-  var phases = [1, 2, 3].map(function (n) { return [PHASES[n], MODS.filter(function (m) { return m.phase === n; }).map(function (m) { return { m: m }; })]; });
-  phases[2][1].push({ soon: ['\u2605', 'Capstone: Quarterly Business Review'] });
-  phases.forEach(function (ph) {
-    p.appendChild(h('h2', { text: ph[0] }));
+  p.appendChild(h('h1', { text: 'From your first query to a business review' }));
+  p.appendChild(h('p', { class: 'lede', text: 'Each module has short concepts, runnable examples and graded exercises that go from Easy to Hard. A module is complete when its Easy and Medium exercises are solved. The capstone puts everything together in one business review on your dataset.' }));
+  var done = ALL_EX.filter(function (e) { return isDone(e.id); }).length, nx = nextExercise();
+  p.appendChild(h('div', { class: 'overall panel' },
+    h('b', { text: done + ' of ' + ALL_EX.length + ' exercises solved' }),
+    h('span', { class: 'bar', role: 'progressbar', 'aria-label': 'Course progress', 'aria-valuemin': '0', 'aria-valuemax': String(ALL_EX.length), 'aria-valuenow': String(done) }, h('i', { style: 'width:' + (100 * done / ALL_EX.length) + '%' })),
+    nx ? h('a', { class: 'btn primary', href: '#' + nx.id, text: (done ? 'Continue: ' : 'Start: ') + modName(nx.mod) + ', ' + exName(nx).toLowerCase() }) : h('a', { class: 'btn', href: '#progress', text: 'See your progress' })));
+  Object.keys(PHASES).forEach(function (n) {
+    var mods = MODS.filter(function (m) { return m.phase === +n; });
+    p.appendChild(h('h2', { text: PHASES[n] }));
     var g = h('div', { class: 'mod-grid' });
-    ph[1].forEach(function (it) {
-      if (it.m) {
-        var m = it.m, n = modDone(m);
-        g.appendChild(h('a', { class: 'mod-card' + (modComplete(m) ? ' done' : ''), href: '#' + m.id },
-          h('span', { class: 'mod-num', text: 'Module ' + m.number }), h('b', { text: m.title }),
-          h('span', { class: 'muted', text: m.examples.length + ' examples \u00b7 ' + m.exercises.length + ' exercises \u00b7 ' + m.concepts.length + ' concepts' }),
-          h('span', { class: 'bar' }, h('i', { style: 'width:' + (100 * n / m.exercises.length) + '%' })),
-          h('span', { class: 'muted sm', text: n + ' of ' + m.exercises.length + ' solved' })));
-      } else {
-        g.appendChild(h('div', { class: 'mod-card soon' }, h('span', { class: 'mod-num', text: 'Capstone' }), h('b', { text: it.soon[1] }), h('span', { class: 'muted', text: 'Six graded tasks on your dataset. Coming in the next release.' })));
-      }
+    mods.forEach(function (m) {
+      var k = modDone(m), st = modStatus(m);
+      g.appendChild(h('a', { class: 'mod-card' + (st.key === 'done' ? ' done' : '') + (st.key === 'next' ? ' upnext' : '') + (m.capstone ? ' cap' : ''), href: '#' + m.id },
+        h('span', { class: 'mod-top' }, h('span', { class: 'mod-num', text: (m.capstone ? '★ ' : '') + modName(m) }), statusChip(m)),
+        h('b', { text: m.title }),
+        h('span', { class: 'muted sm', text: hoursText(m) + ' · ' + (m.examples.length ? m.examples.length + ' examples · ' : '') + m.exercises.length + (m.capstone ? ' tasks' : ' exercises') }),
+        h('span', { class: 'mod-meta' },
+          h('span', { class: 'bar' }, h('i', { style: 'width:' + (100 * k / m.exercises.length) + '%' })),
+          h('span', { class: 'muted sm', text: k + ' of ' + m.exercises.length + ' solved' }))));
     });
     p.appendChild(g);
   });
@@ -478,22 +639,38 @@ var tabMemory = {};
 function viewModule(m, tab) {
   var p = page();
   var ds = curDs();
-  p.appendChild(h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('a', { href: '#learn', text: 'Course map' }), ' \u203a ', h('span', { text: 'Module ' + m.number })));
-  p.appendChild(h('div', { class: 'eyebrow', text: 'Phase ' + m.phase + ' \u00b7 Module ' + m.number + ' \u00b7 about ' + Math.round(m.minutes / 60) + ' hours' }));
+  p.appendChild(h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('a', { href: '#learn', text: 'Course map' }), ' › ', h('span', { text: modName(m) })));
+  p.appendChild(h('div', { class: 'eyebrow', text: PHASES[m.phase].split(' · ')[0] + ' · ' + modName(m) + ' · ' + hoursText(m) }));
   p.appendChild(h('h1', { text: m.title }));
+  p.appendChild(h('span', { class: 'lbl', text: 'By the end you can' }));
   var ul = h('ul', { class: 'objectives' }); m.objectives.forEach(function (o) { ul.appendChild(h('li', { text: o })); });
   p.appendChild(ul);
+  /* where the learner stands in this module, and the one thing to do next */
+  var k = modDone(m), todo = m.exercises.filter(function (e) { return !isDone(e.id); })[0], nextMod = MODS[MODS.indexOf(m) + 1];
+  var started = m.exercises.some(function (e) { return exState(e.id) !== 'new'; });
+  if (modComplete(m)) {
+    p.appendChild(h('div', { class: 'banner', role: 'status' }, h('b', { text: '✓ ' + modName(m) + ' complete.' }),
+      h('span', { text: todo ? 'The Hard ' + (m.capstone ? 'task' : 'exercise') + ' is optional, and earns 200 XP.' : 'Every ' + (m.capstone ? 'task' : 'exercise') + ' solved.' }), h('span', { class: 'sp' }),
+      todo ? h('a', { class: 'btn sm', href: '#' + todo.id, text: 'Try ' + exName(todo).toLowerCase() }) : null,
+      nextMod ? h('a', { class: 'btn primary sm', href: '#' + nextMod.id, text: 'Next: ' + modName(nextMod) + ' →' }) : null));
+  } else {
+    p.appendChild(h('div', { class: 'mod-progress' }, statusChip(m),
+      h('span', { class: 'bar', role: 'progressbar', 'aria-label': modName(m) + ' progress', 'aria-valuemin': '0', 'aria-valuemax': String(m.exercises.length), 'aria-valuenow': String(k) }, h('i', { style: 'width:' + (100 * k / m.exercises.length) + '%' })),
+      h('span', { class: 'muted', text: k + ' of ' + m.exercises.length + ' solved' }),
+      h('a', { class: 'btn primary sm', href: '#' + todo.id, text: (started ? 'Continue with ' : 'Start with ') + exName(todo).toLowerCase() })));
+  }
   tab = tab || tabMemory[m.id] || 'concepts';
+  if (tab === 'examples' && !m.examples.length) tab = 'exercises';
   tabMemory[m.id] = tab;
-  var tabs = h('div', { class: 'tabs', role: 'tablist' });
-  [['concepts', 'Concepts', m.concepts.length], ['examples', 'Examples', m.examples.length], ['exercises', 'Exercises', m.exercises.length]].forEach(function (t) {
-    tabs.appendChild(h('a', { class: 'tab', role: 'tab', href: '#' + m.id + '-' + t[0], 'aria-selected': t[0] === tab ? 'true' : 'false' }, t[1], h('span', { class: 'ct', text: t[2] })));
+  var tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Module sections' }), step = 0;
+  [['concepts', 'Concepts', m.concepts.length], ['examples', 'Examples', m.examples.length], ['exercises', m.capstone ? 'Tasks' : 'Exercises', m.exercises.length]].filter(function (t) { return t[2]; }).forEach(function (t) {
+    tabs.appendChild(h('a', { class: 'tab', role: 'tab', href: '#' + m.id + '-' + t[0], 'aria-selected': t[0] === tab ? 'true' : 'false' }, h('span', { class: 'step', 'aria-hidden': 'true', text: ++step }), t[1], h('span', { class: 'ct', text: t[2] })));
   });
   p.appendChild(tabs);
   var body = h('div', { class: 'stack' });
   if (tab === 'concepts') {
     m.concepts.forEach(function (c) { body.appendChild(h('article', { class: 'concept' }, h('h3', { html: md(c.term) }), h('p', { class: 'what', html: md(c.what) }), c.whenWhy ? h('p', { class: 'why', html: '<b>When and why:</b> ' + md(c.whenWhy) }) : null, c.syntax ? h('pre', { class: 'syntax', text: c.syntax }) : null)); });
-    body.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + m.id + '-examples', text: 'Next: run the examples' })));
+    body.appendChild(h('div', { class: 'actions' }, m.examples.length ? h('a', { class: 'btn primary', href: '#' + m.id + '-examples', text: 'Next: run the examples' }) : h('a', { class: 'btn primary', href: '#' + m.id + '-exercises', text: m.capstone ? 'Next: start the review' : 'Next: try the exercises' })));
   } else if (tab === 'examples') {
     body.appendChild(h('p', { class: 'muted', html: 'Examples use the <b>' + esc(DSETS[ds].name) + '</b> dataset. Edit any query and run it; nothing you do here can break the data for the exercises.' }));
     m.examples.forEach(function (e, i) {
@@ -504,17 +681,17 @@ function viewModule(m, tab) {
     });
     body.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + m.id + '-exercises', text: 'Next: try the exercises' })));
   } else {
+    body.appendChild(h('p', { class: 'muted', text: m.capstone ? 'Each task is one question from the business review. Choose the tables and joins yourself; every answer is checked by running it.' : 'Work through them in order. Easy and Medium complete the module; Hard is a stretch.' }));
     m.exercises.forEach(function (e) {
       var v = e.v[ds];
       body.appendChild(h('a', { class: 'ex-card', href: '#' + e.id },
-        h('div', { class: 'ex-top' }, h('b', { text: 'Exercise ' + e.n }), badge(e.level), h('span', { class: 'sp' }), stateChip(e.id)),
+        h('div', { class: 'ex-top' }, h('b', { text: exName(e) }), badge(e.level), h('span', { class: 'xp-tag', text: XP[e.level] + ' XP' }), h('span', { class: 'sp' }), stateChip(e.id)),
         h('p', { class: 'muted', text: v.story }), h('p', { html: md(v.task) })));
     });
   }
   p.appendChild(body);
   return p;
 }
-
 function runCell(item, ds, opts) {
   opts = opts || {};
   var cell = h('section', { class: 'cell' });
@@ -532,7 +709,7 @@ function runCell(item, ds, opts) {
   var ed = makeEditor(item.sql, { onRun: run, label: 'Example SQL editor' });
   function run() { out.innerHTML = '<p class="muted">Running\u2026</p>'; Engine.req(ds, { cmd: 'run', sql: ed.get(), pre: item.pre }).then(function (r) { if (r.timeout) r.error = 'TIMEOUT'; renderResult(out, r); }); }
   cell.appendChild(ed.el);
-  cell.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: run, text: 'Run' }), h('button', { class: 'btn ghost', type: 'button', onclick: function () { ed.set(item.sql); out.innerHTML = ''; }, text: 'Reset code' }), h('span', { class: 'kbd', text: 'Ctrl/\u2318 + Enter runs' })));
+  cell.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: run, text: 'Run' }), h('button', { class: 'btn ghost', type: 'button', onclick: function () { ed.set(item.sql); out.innerHTML = ''; }, text: 'Reset code' }), h('span', { class: 'kbd', text: MOD_KEY + ' + Enter runs' })));
   cell.appendChild(out);
   if (item.tryIt) cell.appendChild(h('p', { class: 'try', html: '<b>Try it:</b> ' + md(item.tryIt) }));
   if (opts.autorun) setTimeout(run, 30);
@@ -540,14 +717,16 @@ function runCell(item, ds, opts) {
 }
 
 /* ---------------------------------------------------------------- exercise workspace */
+function emptyResult() { return h('p', { class: 'res-empty', text: 'Your result appears here. Run to preview it; when it looks right, press Check answer.' }); }
 function viewExercise(ex) {
   var m = ex.mod, ds = curDs(), v = ex.v[ds];
   var p = page('wide');
-  p.appendChild(h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('a', { href: '#learn', text: 'Course map' }), ' \u203a ', h('a', { href: '#' + m.id + '-exercises', text: 'Module ' + m.number }), ' \u203a ', h('span', { text: 'Exercise ' + ex.n })));
+  var modLbl = m.capstone ? 'Capstone' : 'Module ' + m.number, exWord = m.capstone ? 'Task ' : 'Exercise ';
+  p.appendChild(h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('a', { href: '#learn', text: 'Course map' }), ' \u203a ', h('a', { href: '#' + m.id + '-exercises', text: modLbl }), ' \u203a ', h('span', { text: exWord + ex.n })));
   var ws = h('div', { class: 'workspace' });
   /* task panel */
   var task = h('section', { class: 'task', 'aria-label': 'Task' });
-  task.appendChild(h('div', { class: 'ex-top' }, h('b', { text: 'Module ' + m.number + ' \u00b7 Exercise ' + ex.n }), badge(ex.level), h('span', { class: 'sp' }), stateChip(ex.id)));
+  task.appendChild(h('div', { class: 'ex-top' }, h('b', { text: modLbl + ' \u00b7 ' + exWord + ex.n }), badge(ex.level), h('span', { class: 'xp-tag', text: XP[ex.level] + ' XP' }), h('span', { class: 'sp' }), stateChip(ex.id)));
   task.appendChild(h('p', { class: 'story', text: v.story }));
   task.appendChild(h('p', { class: 'task-text', html: md(v.task) }));
   var ret = h('div', { class: 'returns' });
@@ -561,7 +740,21 @@ function viewExercise(ex) {
     ret.appendChild(chips);
     ret.appendChild(h('span', { class: 'lbl', text: ex.orderMatters ? 'Order matters: sort as the task says' : 'Any order is fine' }));
   }
+  var expBox = h('div', { class: 'expected', hidden: true });
+  var expBtn = h('button', { class: 'btn ghost sm', type: 'button', 'aria-expanded': 'false', text: 'Show expected output', onclick: function () {
+    if (!expBox.hidden) { expBox.hidden = true; expBtn.textContent = 'Show expected output'; expBtn.setAttribute('aria-expanded', 'false'); return; }
+    expBox.hidden = false; expBtn.textContent = 'Hide expected output'; expBtn.setAttribute('aria-expanded', 'true');
+    expBox.innerHTML = '<p class="muted sm">Running the model answer on a fresh copy…</p>';
+    Engine.req(ds, { cmd: 'expected', solution: v.sql, pre: v.pre, verify: v.verify }, 6000).then(function (x) {
+      expBox.innerHTML = '';
+      if (x.error || !x.rows) { expBox.appendChild(h('p', { class: 'muted sm', text: 'The expected output is not available for this task.' })); return; }
+      expBox.appendChild(h('p', { class: 'muted sm', text: (v.verify ? 'What the check query returns after a correct answer' : 'What a correct answer returns') + (x.total > 8 ? ' (first 8 of ' + x.total + ' rows).' : ' (' + x.total + ' row' + (x.total === 1 ? '' : 's') + ').') + ' Seeing it costs no XP.' }));
+      expBox.appendChild(table(x.cols, x.rows.slice(0, 8)));
+    });
+  } });
+  ret.appendChild(expBtn);
   task.appendChild(ret);
+  task.appendChild(expBox);
   task.appendChild(h('p', { class: 'muted sm', text: 'Dataset: ' + dsLabel(ds) + ' \u00b7 concepts: ' + ex.concepts.join(', ') }));
   var hintsBox = h('div', { class: 'hints' });
   task.appendChild(hintsBox);
@@ -569,11 +762,11 @@ function viewExercise(ex) {
   task.appendChild(solBox);
   var nav = h('div', { class: 'ex-nav' });
   var prev = m.exercises[ex.n - 2], next = m.exercises[ex.n];
-  var nextMod = MODS[m.number];
-  if (prev) nav.appendChild(h('a', { class: 'btn ghost', href: '#' + prev.id, text: '\u2190 Exercise ' + prev.n }));
+  var nextMod = MODS[MODS.indexOf(m) + 1];
+  if (prev) nav.appendChild(h('a', { class: 'btn ghost', href: '#' + prev.id, text: '\u2190 ' + exWord + prev.n }));
   nav.appendChild(h('span', { class: 'sp' }));
-  if (next) nav.appendChild(h('a', { class: 'btn', href: '#' + next.id, text: 'Exercise ' + next.n + ' \u2192' }));
-  else if (nextMod) nav.appendChild(h('a', { class: 'btn', href: '#' + nextMod.id, text: 'Module ' + nextMod.number + ' \u2192' }));
+  if (next) nav.appendChild(h('a', { class: 'btn', href: '#' + next.id, text: exWord + next.n + ' \u2192' }));
+  else if (nextMod) nav.appendChild(h('a', { class: 'btn', href: '#' + nextMod.id, text: (nextMod.capstone ? 'Capstone' : 'Module ' + nextMod.number) + ' \u2192' }));
   task.appendChild(nav);
   /* workspace panel */
   var work = h('section', { class: 'work', 'aria-label': 'Workspace' });
@@ -587,7 +780,7 @@ function viewExercise(ex) {
     onRun: run, onCheck: check, label: 'Your SQL for exercise ' + ex.n,
     onChange: function (val) { S.drafts[draftKey] = val; S.drafts[draftKey + '@ds'] = ds; save(); }
   });
-  var out = h('div', { class: 'res', 'aria-live': 'polite' });
+  var out = h('div', { class: 'res', 'aria-live': 'polite' }, emptyResult());
   var fb = h('div', { class: 'feedback', 'aria-live': 'polite' });
   var schemaBox = h('div', { class: 'schema-drawer', hidden: true });
   var hintLevel = (S.hints[ex.id + '@' + ds] || 0);
@@ -624,6 +817,7 @@ function viewExercise(ex) {
   function paintState() { var c = task.querySelector('.state'); if (c) c.replaceWith(stateChip(ex.id)); }
   function run() {
     out.innerHTML = '<p class="muted">Running\u2026</p>';
+    markActive();
     Engine.req(ds, { cmd: 'run', sql: ed.get(), pre: v.pre }).then(function (r) { if (r.timeout) r.error = 'TIMEOUT'; renderResult(out, r); });
   }
   function check() {
@@ -635,6 +829,8 @@ function viewExercise(ex) {
     (v.require || []).forEach(function (q) { if (!rule && !new RegExp(q[0], 'i').test(bare)) rule = q[1]; });
     Engine.req(ds, { cmd: 'check', learner: learner, solution: v.sql, pre: v.pre, verify: v.verify }, 6000).then(function (r) {
       if (r.timeout || r.error) { fb.innerHTML = ''; renderResult(out, { error: r.timeout ? 'TIMEOUT' : r.error }); return; }
+      markActive();
+      var wasDone = isDone(ex.id), xpBefore = xp(), modWasComplete = modComplete(m);
       if (exState(ex.id) === 'new') setState(ex.id, 'attempted');
       if (r.mine.error) { fb.innerHTML = ''; renderResult(out, r.mine); paintState(); return; }
       renderResult(out, r.mine);
@@ -644,12 +840,16 @@ function viewExercise(ex) {
       if (cmp.ok) {
         var st = S.helped[ex.id] ? 'helped' : 'solved';
         setState(ex.id, st);
-        var box = h('div', { class: 'fb ok', role: 'status' }, h('p', { class: 'fb-title', text: v.verify ? 'Correct. The data after your SQL matches the model answer.' : 'Correct. Your ' + r.mine.total + (r.mine.total === 1 ? ' row matches' : ' rows match') + ' the answer exactly.' }));
+        if (wasDone) { S.reviewed[ex.id] = Date.now(); save(); }
+        var gained = xp() - xpBefore;
+        var box = h('div', { class: 'fb ok', role: 'status' }, h('p', { class: 'fb-title', text: (v.verify ? 'Correct. The data after your SQL matches the model answer.' : 'Correct. Your ' + r.mine.total + (r.mine.total === 1 ? ' row matches' : ' rows match') + ' the answer exactly.') + (gained ? ' +' + gained + ' XP' : wasDone ? ' Reviewed.' : '') }));
         if (cmp.namesDiffer && !v.verify) box.appendChild(h('p', { text: 'Your column names differ from the suggested ones (' + v.cols.join(', ') + '). The values are right; matching names makes reports easier to share.' }));
         box.appendChild(h('p', { html: md(ex.explain) }));
-        if (st === 'helped') box.appendChild(h('p', { class: 'muted sm', text: 'Marked as solved with help because the solution was shown. Points are halved.' }));
+        if (st === 'helped') box.appendChild(h('p', { class: 'muted sm', text: 'Marked as solved with help because the solution was shown. It earns half the XP.' }));
+        if (!modWasComplete && modComplete(m)) box.appendChild(h('p', { class: 'done-line', text: '\u2713 That completes ' + modName(m) + ': ' + m.title + '.' }));
         var nx = next || (nextMod && nextMod.exercises[0]);
-        if (nx) box.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + nx.id, text: 'Next exercise \u2192' })));
+        if (nx) box.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + (next ? next.id : nextMod.id), text: next ?'Next: ' + exName(next).toLowerCase() + ' \u2192' : 'Next: ' + modName(nextMod) + ' \u2192' })));
+        else box.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#progress', text: 'See your progress' })));
         fb.appendChild(box);
       } else {
         var bx = h('div', { class: 'fb no', role: 'status' });
@@ -660,6 +860,7 @@ function viewExercise(ex) {
           values: r.mine.total !== r.expected.total ? 'You have ' + r.mine.total + ' rows; the answer has ' + r.expected.total + ', and some values differ.' : 'Same number of rows as the answer, but some values differ.' }[cmp.kind];
         if (v.verify && cmp.kind !== 'rule' && cmp.kind !== 'columns' && cmp.kind !== 'no-rows') title = v.verifyMsg || 'After your SQL ran, the check query did not give the expected result.';
         bx.appendChild(h('p', { class: 'fb-title', text: title }));
+        if (!v.verify && r.mine.rows && cmp.kind !== 'rule') bx.appendChild(renderChecklist(checklist(r.mine, r.expected, cmp)));
         if (cmp.kind === 'values' || cmp.kind === 'missing' || cmp.kind === 'extra' || cmp.kind === 'duplicates') {
           var diff = h('div', { class: 'diff' });
           if (cmp.missing && cmp.missing.length) diff.appendChild(h('div', null, h('span', { class: 'lbl', text: 'Expected but missing (' + cmp.missing.length + ')' }), table(r.expected.cols, cmp.missing.slice(0, 3), cmp.missing.slice(0, 3).map(function () { return 'miss'; }))));
@@ -675,7 +876,7 @@ function viewExercise(ex) {
     });
   }
   function resetCode() {
-    var before = ed.all(); ed.set(starter(ex, ds)); fb.innerHTML = ''; out.innerHTML = '';
+    var before = ed.all(); ed.set(starter(ex, ds)); fb.innerHTML = ''; out.innerHTML = ''; out.appendChild(emptyResult());
     toast('Code reset to the starter.', { label: 'Undo', fn: function () { ed.set(before); } });
   }
   function resetData() {
@@ -687,16 +888,19 @@ function viewExercise(ex) {
     });
   }
   var resetMenu = h('div', { class: 'menu', hidden: true }, h('button', { class: 'btn sm', type: 'button', text: 'Reset code', onclick: function () { resetMenu.hidden = true; resetCode(); } }), h('button', { class: 'btn sm', type: 'button', text: 'Reset data', onclick: function () { resetMenu.hidden = true; resetData(); } }));
-  var resetBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset', 'aria-haspopup': 'true', onclick: function () { resetMenu.hidden = !resetMenu.hidden; } });
-  var schemaBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Schema', 'aria-expanded': 'false', onclick: function () { toggleSchema(schemaBox, schemaBtn, ds, function (txt) { ed.cm.replaceSelection(txt); ed.focus(); }); } });
-  var bar = h('div', { class: 'actions action-bar' },
-    h('button', { class: 'btn primary', type: 'button', onclick: run, text: 'Run' }),
-    h('button', { class: 'btn accent', type: 'button', onclick: check, text: 'Check answer' }),
+  var resetBtn = h('button', { class: 'btn ghost sm', type: 'button', text: 'Reset', 'aria-haspopup': 'true', onclick: function () { resetMenu.hidden = !resetMenu.hidden; } });
+  var schemaBtn = h('button', { class: 'btn ghost sm', type: 'button', text: 'Schema', 'aria-expanded': 'false', onclick: function () { toggleSchema(schemaBox, schemaBtn, ds, function (txt) { ed.cm.replaceSelection(txt); ed.focus(); }); } });
+  /* three groups: do (run, check), get help (hint, solution), tools (format, schema, reset) */
+  var bar = h('div', { class: 'actions action-bar', role: 'toolbar', 'aria-label': 'Exercise actions' },
+    h('button', { class: 'btn strong', type: 'button', onclick: run, text: 'Run', title: 'Run your query to preview the result (' + MOD_KEY + '+Enter)' }),
+    h('button', { class: 'btn primary', type: 'button', onclick: check, text: 'Check answer', title: 'Compare your result with the answer (' + MOD_KEY + '+Shift+Enter)' }),
+    h('span', { class: 'bar-sep', 'aria-hidden': 'true' }),
     hintBtn, solBtn,
-    h('span', { class: 'reset-wrap' }, resetBtn, resetMenu),
-    h('button', { class: 'btn ghost', type: 'button', text: 'Format', onclick: function () { ed.set(formatSql(ed.all())); } }),
-    schemaBtn);
-  work.appendChild(h('div', { class: 'work-head' }, h('span', { class: 'lbl', text: 'Your SQL' }), h('span', { class: 'kbd', text: 'Run Ctrl/\u2318+Enter \u00b7 Check +Shift \u00b7 Hint Alt+H' })));
+    h('span', { class: 'bar-sep', 'aria-hidden': 'true' }),
+    h('button', { class: 'btn ghost sm', type: 'button', text: 'Format', title: 'Tidy the layout of your SQL (Shift+Alt+F)', onclick: function () { ed.set(formatSql(ed.all())); } }),
+    schemaBtn,
+    h('span', { class: 'reset-wrap' }, resetBtn, resetMenu));
+  work.appendChild(h('div', { class: 'work-head' }, h('span', { class: 'lbl', text: 'Your SQL' }), h('span', { class: 'kbd', text: 'Run ' + MOD_KEY + '+Enter \u00b7 Check ' + MOD_KEY + '+Shift+Enter \u00b7 Hint Alt+H' })));
   if (dsNote) work.appendChild(dsNote);
   work.appendChild(ed.el);
   work.appendChild(bar);
@@ -774,14 +978,119 @@ function viewDatasets() {
   return p;
 }
 
+function levelCard(lv) {
+  var pct = lv.to ? Math.round(100 * (lv.xp - lv.from) / (lv.to - lv.from)) : 100;
+  return h('div', { class: 'level-card' },
+    h('div', { class: 'level-top' }, h('span', { class: 'lbl', text: 'Level ' + lv.n }), h('b', { text: lv.name }), h('span', { class: 'sp' }), h('span', { class: 'muted sm', text: lv.xp + ' XP' })),
+    h('span', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': 'Progress to the next level' }, h('i', { style: 'width:' + pct + '%' })),
+    h('span', { class: 'muted sm', text: lv.to ? (lv.to - lv.xp) + ' XP to ' + lv.nextName + '. Easy 50 · Medium 100 · Hard 200; half if you used the solution.' : 'Top level reached.' }));
+}
+
+var SKILLS = [['Basics', ['m00', 'm01', 'm02']], ['Aggregation', ['m03']], ['Joins', ['m04']], ['Subqueries and CTEs', ['m05', 'm06']],
+  ['Window functions', ['m07', 'm08']], ['Dates, text, pivots', ['m09']], ['Design and tuning', ['m10', 'm11', 'm12']], ['Data cleaning', ['m13']]];
+function skillScores() {
+  return SKILLS.map(function (s) {
+    var t = 0, n = 0;
+    s[1].forEach(function (id) { var m = MOD_BY_ID[id]; if (m) m.exercises.forEach(function (e) { var st = exState(e.id); t += st === 'solved' ? 1 : st === 'helped' ? 0.5 : st === 'attempted' ? 0.15 : 0; n++; }); });
+    return { name: s[0], pct: n ? Math.round(100 * t / n) : 0 };
+  });
+}
+function radar(scores) {
+  var cx = 280, cy = 160, R = 112, n = scores.length, out = '';
+  function pt(i, r) { var a = -Math.PI / 2 + 2 * Math.PI * i / n; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+  [25, 50, 75, 100].forEach(function (lvl) { out += '<polygon class="r-ring" points="' + scores.map(function (s, i) { return pt(i, R * lvl / 100).join(','); }).join(' ') + '"/>'; });
+  scores.forEach(function (s, i) {
+    var e = pt(i, R), l = pt(i, R + 16), anchor = Math.abs(l[0] - cx) < 4 ? 'middle' : l[0] > cx ? 'start' : 'end';
+    out += '<line class="r-axis" x1="' + cx + '" y1="' + cy + '" x2="' + e[0] + '" y2="' + e[1] + '"/>';
+    out += tx(l[0].toFixed(1), (l[1] + 5).toFixed(1), s.name, { cls: 'r-lbl', anchor: anchor });
+  });
+  out += '<polygon class="r-area" points="' + scores.map(function (s, i) { return pt(i, R * Math.max(s.pct, 2) / 100).join(','); }).join(' ') + '"/>';
+  scores.forEach(function (s, i) { var q = pt(i, R * Math.max(s.pct, 2) / 100); out += '<circle class="r-dot" cx="' + q[0] + '" cy="' + q[1] + '" r="3.5"/>'; });
+  var label = 'Skills radar. ' + scores.map(function (s) { return s.name + ' ' + s.pct + ' percent'; }).join(', ') + '.';
+  var fig = h('figure', { class: 'viz radar', html: svgEl(560, 320, out, label) });
+  var list = h('div', { class: 'mastery skill-list' });
+  scores.forEach(function (s) { list.appendChild(h('div', { class: 'm-row' }, h('span', { text: s.name }), h('span', { class: 'bar' }, h('i', { style: 'width:' + s.pct + '%' })), h('span', { class: 'num', text: s.pct + '%' }))); });
+  fig.appendChild(list);
+  return fig;
+}
+
+function reviewQueue() {
+  var now = Date.now(), DAY = 864e5, items = [];
+  MODS.forEach(function (m) {
+    if (!m.exercises.some(function (e) { return exState(e.id) !== 'new'; })) return;
+    m.exercises.forEach(function (e) {
+      var s = exState(e.id), at = (S.progress[e.id] || {}).at || 0, last = Math.max(at, S.reviewed[e.id] || 0);
+      var hinted = ORDER.some(function (d) { return S.hints[e.id + '@' + d]; }), w = 0, why = '';
+      if (S.reviewed[e.id] && now - S.reviewed[e.id] < 3 * DAY) return;
+      if (s === 'attempted') { w = 4; why = 'Not solved yet. Have another go.'; }
+      else if (s === 'helped') { w = 3; why = 'You needed the solution. Try it on your own now.'; }
+      else if (s === 'solved' && hinted) { w = 2; why = 'You needed hints. See if you can do it without them.'; }
+      else if (s === 'solved' && now - last > 7 * DAY) { w = 1; why = 'Solved ' + Math.round((now - last) / DAY) + ' days ago. Keep it fresh.'; }
+      else if (s === 'new') { w = 0.5; why = 'Not tried yet, in a module you have started.'; }
+      if (w) items.push({ e: e, w: w, why: why, t: last });
+    });
+  });
+  return items.sort(function (a, b) { return b.w - a.w || a.t - b.t || ALL_EX.indexOf(a.e) - ALL_EX.indexOf(b.e); });
+}
+function viewPractice() {
+  var p = page(), ds = curDs(), st = streaks();
+  p.appendChild(h('div', { class: 'eyebrow', text: 'Practice arena' }));
+  p.appendChild(h('h1', { text: 'Review what you have learned' }));
+  p.appendChild(h('p', { class: 'lede', text: 'Short reviews make SQL stick. Your queue puts first what you found hardest: exercises you have not solved, ones where you needed the solution or hints, and ones you solved a while ago.' }));
+  p.appendChild(h('div', { class: 'stats' },
+    h('div', null, h('b', { text: st.daily }), h('span', { text: 'day streak' })), h('div', null, h('b', { text: st.weekly }), h('span', { text: 'week streak' })),
+    h('div', null, h('b', { text: level().name }), h('span', { text: xp() + ' XP' }))));
+  var q = reviewQueue();
+  if (!q.length) {
+    var started = ALL_EX.some(function (e) { return exState(e.id) !== 'new'; });
+    p.appendChild(h('p', { class: 'muted', text: started ? 'Nothing to review right now. Everything you started is solved and fresh. Carry on with the course, or try a mixed challenge below.' : 'The arena fills up as you work. Solve a few exercises first.' }));
+    if (!started) { p.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + MODS[0].id, text: 'Start here' }))); return p; }
+  } else {
+    p.appendChild(h('h2', { text: 'Your review queue' }));
+    var list = h('div', { class: 'stack' });
+    q.slice(0, 6).forEach(function (it) {
+      var e = it.e;
+      list.appendChild(h('a', { class: 'ex-card', href: '#' + e.id },
+        h('div', { class: 'ex-top' }, h('b', { text: (e.mod.capstone ? 'Capstone' : 'Module ' + e.mod.number) + ' · ' + (e.mod.capstone ? 'Task ' : 'Exercise ') + e.n }), badge(e.level), h('span', { class: 'sp' }), stateChip(e.id)),
+        h('p', { class: 'why-review', text: it.why }), h('p', { html: md(e.v[ds].task) })));
+    });
+    p.appendChild(list);
+  }
+  var done = ALL_EX.filter(function (e) { return isDone(e.id); });
+  if (done.length) {
+    p.appendChild(h('h2', { text: 'Mixed challenge' }));
+    p.appendChild(h('p', { class: 'muted', text: 'Solve an exercise you already know on a different dataset. The skill is the same, but the tables, names and answers are new.' }));
+    p.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', text: 'Give me a mixed challenge', onclick: function () {
+      var e = done[Math.floor(Math.random() * done.length)], others = ORDER.filter(function (d) { return d !== (S.progress[e.id] || {}).ds && d !== curDs(); });
+      setDs(others[Math.floor(Math.random() * others.length)] || curDs(), true);
+      toast('Dataset: ' + dsLabel(curDs()));
+      navigate(e.id);
+    } })));
+  }
+  return p;
+}
+
 function viewProgress() {
   var p = page();
   p.appendChild(h('div', { class: 'eyebrow', text: 'My progress' }));
   p.appendChild(h('h1', { text: 'What you have mastered' }));
   var solved = ALL_EX.filter(function (e) { return exState(e.id) === 'solved'; }).length, helped = ALL_EX.filter(function (e) { return exState(e.id) === 'helped'; }).length, tried = ALL_EX.filter(function (e) { return exState(e.id) === 'attempted'; }).length;
+  var lv = level(), st = streaks();
+  p.appendChild(levelCard(lv));
   p.appendChild(h('div', { class: 'stats' },
     h('div', null, h('b', { text: solved }), h('span', { text: 'solved' })), h('div', null, h('b', { text: helped }), h('span', { text: 'solved with help' })),
-    h('div', null, h('b', { text: tried }), h('span', { text: 'attempted' })), h('div', null, h('b', { text: points() }), h('span', { text: 'points' }))));
+    h('div', null, h('b', { text: tried }), h('span', { text: 'attempted' })), h('div', null, h('b', { text: lv.xp }), h('span', { text: 'XP' }))));
+  p.appendChild(h('div', { class: 'stats' },
+    h('div', null, h('b', { text: st.daily }), h('span', { text: 'day streak' + (st.best > st.daily ? ' (best ' + st.best + ')' : '') })),
+    h('div', null, h('b', { text: st.weekly }), h('span', { text: 'week streak' })),
+    h('div', null, h('b', { text: st.activeDays }), h('span', { text: 'days practised' }))));
+  p.appendChild(h('h2', { text: 'Skills' }));
+  p.appendChild(h('p', { class: 'muted', text: 'Each axis is the share of that skill’s exercises you have solved. Solving with help counts half; attempting counts a little.' }));
+  p.appendChild(radar(skillScores()));
+  p.appendChild(h('h2', { text: 'Badges' }));
+  var got = earned(), bg = h('div', { class: 'badges' });
+  BADGES.forEach(function (b) { var on = got.indexOf(b.id) >= 0; bg.appendChild(h('div', { class: 'badge-card' + (on ? ' on' : '') }, h('span', { class: 'medal', 'aria-hidden': 'true', text: on ? '★' : '☆' }), h('b', { text: b.name }), h('span', { class: 'muted sm', text: (on ? 'Earned. ' : '') + b.how }))); });
+  p.appendChild(bg);
   p.appendChild(h('h2', { text: 'Modules' }));
   var tbl = h('table', { class: 'grid plain' });
   tbl.appendChild(h('thead', null, h('tr', null, h('th', { text: 'Module' }), h('th', { text: 'Solved' }), h('th', { text: 'Status' }))));
@@ -804,15 +1113,22 @@ function viewProgress() {
     weak.forEach(function (w) { var target = w.ex.filter(function (e) { return exState(e.id) !== 'solved'; })[0] || w.ex[0]; wk.appendChild(h('a', { class: 'chip', href: '#' + target.id }, h('b', { text: w.c }), ' ' + w.pct + '% \u00b7 Practise this')); });
     p.appendChild(wk);
   }
-  var mg = h('div', { class: 'mastery' });
-  list.slice().sort(function (a, b) { return a.c.localeCompare(b.c); }).forEach(function (x) { mg.appendChild(h('div', { class: 'm-row' }, h('span', { text: x.c }), h('span', { class: 'bar' }, h('i', { style: 'width:' + x.pct + '%' })), h('span', { class: 'num', text: x.pct + '%' }))); });
-  p.appendChild(mg);
+  /* show what the learner has touched; the full list of every concept sits behind a disclosure */
+  function masteryRows(items) {
+    var mg = h('div', { class: 'mastery' });
+    items.slice().sort(function (a, b) { return a.c.localeCompare(b.c); }).forEach(function (x) { mg.appendChild(h('div', { class: 'm-row' }, h('span', { text: x.c }), h('span', { class: 'bar' }, h('i', { style: 'width:' + x.pct + '%' })), h('span', { class: 'num', text: x.pct + '%' }))); });
+    return mg;
+  }
+  var touched = list.filter(function (x) { return x.pct > 0; });
+  if (touched.length) p.appendChild(masteryRows(touched));
+  else p.appendChild(h('p', { class: 'muted', text: 'Concepts appear here as you attempt exercises that use them.' }));
+  p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Show all ' + list.length + ' concepts in the course' }), masteryRows(list)));
   p.appendChild(h('h2', { text: 'Your data' }));
   p.appendChild(h('p', { class: 'muted', text: 'Progress is saved in this browser only. Copy it out to keep a backup or move it to another browser.' }));
   var area = h('textarea', { class: 'export', rows: '3', 'aria-label': 'Progress data', spellcheck: 'false' });
-  var exportBtn = h('button', { class: 'btn', type: 'button', text: 'Copy progress', onclick: function () { copyText(JSON.stringify({ progress: S.progress, helped: S.helped }), exportBtn); } });
-  var importBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Import pasted progress', onclick: function () { try { var d = JSON.parse(area.value); S.progress = d.progress || {}; S.helped = d.helped || {}; save(); toast('Progress imported.'); route(true); } catch (e) { toast('That text is not GageQuery progress. Paste what Copy progress gave you.'); } } });
-  var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; save(); toast('Progress erased.'); route(true); } });
+  var exportBtn = h('button', { class: 'btn', type: 'button', text: 'Copy progress', onclick: function () { copyText(JSON.stringify({ v: S.v, progress: S.progress, helped: S.helped, hints: S.hints, days: S.days, reviewed: S.reviewed }), exportBtn); } });
+  var importBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Import pasted progress', onclick: function () { try { var d = JSON.parse(area.value); if (!d || typeof d.progress !== 'object') throw 0; S.progress = d.progress || {}; S.helped = d.helped || {}; S.hints = d.hints || S.hints; S.days = d.days || {}; S.reviewed = d.reviewed || {}; migrate(d); save(); toast('Progress imported.'); route(true); } catch (e) { toast('That text is not GageQuery progress. Paste what Copy progress gave you.'); } } });
+  var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; S.days = {}; S.reviewed = {}; save(); toast('Progress erased.'); route(true); } });
   p.appendChild(area);
   p.appendChild(h('div', { class: 'actions' }, exportBtn, importBtn, clearBtn));
   return p;
@@ -826,11 +1142,15 @@ function viewAbout() {
    ['MySQL syntax on a browser engine', 'The course teaches MySQL syntax. The engine underneath is SQLite with a compatibility layer that adds CONCAT, CONCAT_WS, DATE_FORMAT, YEAR, MONTH, DAY, QUARTER, DAYNAME, MONTHNAME, DATEDIFF, LEFT, RIGHT, LOCATE, LPAD and MySQL-style ROUND, and accepts START TRANSACTION, CAST(... AS SIGNED), EXPLAIN, SHOW TABLES and DESCRIBE.'],
    ['How answers are checked', 'Check answer runs your query and the model answer on two fresh copies of the data, then compares the rows. Any correct query passes, however you write it. Column names do not have to match; values and, where the task asks, order do. Numbers match to within 0.005.'],
    ['Hints and solutions', 'Each exercise has three hints that go from where to look, to the concept, to a skeleton with blanks. Showing the solution marks the exercise as solved with help, which earns half the points.'],
+   ['Expected output', 'Show expected output runs the model answer on a fresh copy of the data and shows what a correct answer returns. Use it when you are unsure of the shape of the answer. It costs no XP.'],
+   ['Feedback that names the mistake', 'When an answer is wrong, the checker lists what already matches (columns, row count, each column’s values, order) and points at the most likely cause, such as a missing GROUP BY, a JOIN without ON, or an INNER JOIN that should be a LEFT JOIN.'],
+   ['XP, levels, streaks and badges', 'Easy exercises earn 50 XP, Medium 100 and Hard 200, or half if you used the solution. Days you run or check a query count towards your streak. Everything is worked out from the progress saved in this browser.'],
+   ['Practice arena', 'The arena brings back exercises you have not solved, needed the solution or hints for, or solved more than a week ago. A mixed challenge gives you an exercise you know on a dataset you have not used for it.'],
    ['Reset', 'Reset code puts the starter back. Reset data restores the original tables if you changed them with INSERT, UPDATE or DELETE. Both can be undone for 10 seconds.'],
    ['Differences from a MySQL server', 'Integer division and some date functions behave differently between databases, so the model answers multiply by 100.0 when they need decimals. Error messages and EXPLAIN output are worded differently from MySQL\u2019s. Stored procedures and triggers will be shown as reference cards in later modules.']].forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
   p.appendChild(h('h2', { text: 'Keyboard shortcuts' }));
   var t = h('table', { class: 'grid plain' }); var tb = h('tbody');
-  [['Run', 'Ctrl/\u2318 + Enter'], ['Check answer', 'Ctrl/\u2318 + Shift + Enter'], ['Next hint', 'Alt + H'], ['Format SQL', 'Shift + Alt + F'], ['Autocomplete', 'Ctrl + Space'], ['Find anything', 'Ctrl/\u2318 + K'], ['Leave the editor', 'Esc, then Tab']].forEach(function (r) { tb.appendChild(h('tr', null, h('td', { text: r[0] }), h('td', null, h('code', { text: r[1] })))); });
+  [['Run', MOD_KEY + ' + Enter'], ['Check answer', MOD_KEY + ' + Shift + Enter'], ['Next hint', 'Alt + H'], ['Format SQL', 'Shift + Alt + F'], ['Autocomplete', 'Ctrl + Space'], ['Search', MOD_KEY + ' + K'], ['Leave the editor', 'Esc, then Tab']].forEach(function (r) { tb.appendChild(h('tr', null, h('td', { text: r[0] }), h('td', null, h('code', { text: r[1] })))); });
   t.appendChild(tb); p.appendChild(h('div', { class: 'grid-wrap' }, t));
   return p;
 }
@@ -839,7 +1159,7 @@ function viewAbout() {
 function openPalette() {
   var dlg = $('#palette'); dlg.hidden = false;
   var input = $('#pal-input'), list = $('#pal-list'); input.value = ''; render(); input.focus();
-  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Playground', 'playground'], ['My progress', 'progress'], ['How it works', 'about']];
+  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['How it works', 'about']];
   MODS.forEach(function (m) { items.push(['Module ' + m.number + ': ' + m.title, m.id]); m.exercises.forEach(function (e) { items.push(['M' + m.number + ' Exercise ' + e.n + ' (' + e.level + '): ' + e.v[curDs()].task.slice(0, 70), e.id]); }); });
   ORDER.forEach(function (d) { items.push(['Use dataset: ' + dsLabel(d), 'ds:' + d]); });
   var sel = 0, shown = [];
@@ -873,6 +1193,7 @@ function route(keepScroll) {
   else if (r === 'playground') pg = viewPlayground();
   else if (r === 'datasets') pg = viewDatasets();
   else if (r === 'progress') pg = viewProgress();
+  else if (r === 'practice') pg = viewPractice();
   else if (r === 'about') pg = viewAbout();
   else if ((m = /^(m\d\d)(?:-(concepts|examples|exercises))?$/.exec(r)) && MOD_BY_ID[m[1]]) pg = viewModule(MOD_BY_ID[m[1]], m[2]);
   else if (EX_BY_ID[r]) pg = viewExercise(EX_BY_ID[r]);
@@ -885,6 +1206,28 @@ function route(keepScroll) {
 }
 function closeRail() { rail.classList.remove('open'); $('#scrim').classList.remove('open'); }
 
+/* ================================================================ theme (system, light or dark) */
+var THEMES = ['system', 'light', 'dark'], THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' };
+var THEME_ICON = {
+  system: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1.5"/><path d="M6 14h4M8 11v3"/></svg>',
+  light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>',
+  dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg>'
+};
+function themePref() { try { var t = localStorage.getItem('gagequery-theme'); return THEMES.indexOf(t) >= 0 ? t : 'system'; } catch (e) { return 'system'; } }
+function applyTheme(t) {
+  var root = document.documentElement;
+  if (t === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+  try { if (t === 'system') localStorage.removeItem('gagequery-theme'); else localStorage.setItem('gagequery-theme', t); } catch (e) {}
+  var next = THEMES[(THEMES.indexOf(t) + 1) % THEMES.length], btn = $('#theme-btn');
+  $('#theme-ico').innerHTML = THEME_ICON[t]; $('#theme-txt').textContent = THEME_LABEL[t];
+  btn.setAttribute('aria-label', 'Theme: ' + THEME_LABEL[t] + '. Switch to ' + THEME_LABEL[next].toLowerCase() + '.');
+  btn.title = 'Theme: ' + THEME_LABEL[t] + (t === 'system' ? ' (follows your device)' : '') + '. Click for ' + THEME_LABEL[next].toLowerCase() + '.';
+}
+function initTheme() {
+  applyTheme(themePref());
+  $('#theme-btn').addEventListener('click', function () { var t = themePref(); applyTheme(THEMES[(THEMES.indexOf(t) + 1) % THEMES.length]); });
+}
+
 /* ================================================================ boot */
 function boot() {
   rail = $('#rail'); main = $('#main');
@@ -895,6 +1238,8 @@ function boot() {
   $('#menu-btn').addEventListener('click', function () { rail.classList.toggle('open'); $('#scrim').classList.toggle('open'); });
   $('#scrim').addEventListener('click', closeRail);
   $('#pal-btn').addEventListener('click', openPalette);
+  initTheme();
+  $('#pal-kbd').textContent = MOD_KEY + ' K';
   document.addEventListener('click', function (ev) {
     var t = ev.target; while (t && t !== document && !(t.tagName === 'A' && (t.getAttribute('href') || '').charAt(0) === '#')) t = t.parentNode;
     if (!t || t === document) return;

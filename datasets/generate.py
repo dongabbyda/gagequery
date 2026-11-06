@@ -64,6 +64,81 @@ def person(R, used=None):
 
 T = 'VARCHAR(60) COLLATE NOCASE'
 
+# =====================================================================================  MESSY SIGN-UPS (Module 13)
+# One raw import table per dataset with the problems analysts meet in real exports: stray spaces, mixed case,
+# phone and date formats, money stored as text, blanks next to NULLs, unmatched lookup labels and duplicate
+# sign-ups. Each uses its own seed and is written after the clean tables, so no existing row changed.
+# Names are ASCII only: SQLite's UPPER/LOWER fold ASCII letters only, and MySQL folds all of them.
+SOURCES = [('Web', ['Web', 'Web', 'web', 'WEB', ' Web', 'website']), ('Mobile App', ['Mobile App', 'Mobile App', 'mobile app', 'App', 'app ']),
+           ('Referral', ['Referral', 'referral', 'REFERRAL ', 'Friend referral']), ('Walk-in', ['Walk-in', 'walk in', 'Walk In', 'walkin'])]
+PHONES = {'us': (lambda R: '%03d%03d%04d' % (R.randint(201, 989), R.randint(200, 999), R.randint(0, 9999)),
+                 ['({0}) {1}-{2}', '{0}-{1}-{2}', '{0}.{1}.{2}', '{0}{1}{2}', '{0} {1} {2}'], (3, 6)),
+          'ng': (lambda R: '0%d%d%07d' % (R.choice([70, 80, 81, 90]), R.randint(0, 9), R.randint(0, 9999999)),
+                 ['{0} {1} {2}', '{0}-{1}-{2}', '({0}) {1} {2}', '{0}{1}{2}', '{0}.{1}.{2}'], (4, 7))}
+
+
+def messy(seed, table, look_col, looks, typos, amount_col, cur, lo, hi, step, phone, domains, text=T):
+    R = random.Random(seed)
+    first = [f for f in FIRST if f.isascii()]
+    last = [l for l in LAST if l.isascii()]
+    make_phone, phone_formats, cuts = PHONES[phone]
+
+    def name_v(f, l):
+        return R.choice([f + ' ' + l] * 3 + ['  %s %s' % (f, l), '%s %s  ' % (f, l), (f + ' ' + l).upper(), (f + ' ' + l).lower(), f + '  ' + l])
+
+    def email_v(e):
+        return R.choice([e] * 3 + [e.title(), ' ' + e, e + ' ', e.upper()])
+
+    def phone_v(p):
+        return R.choice(phone_formats).format(p[:cuts[0]], p[cuts[0]:cuts[1]], p[cuts[1]:])
+
+    def look_v(v):
+        return R.choice([v] * 3 + [v.lower(), v.upper(), '  ' + v, v + ' '])
+
+    def money_v(v):
+        if v == int(v):
+            v = int(v)
+            return R.choice(['%s%s.00' % (cur, format(v, ',')), str(v), format(v, ','), ' %d ' % v, cur + format(v, ',')])
+        return R.choice(['%s%s' % (cur, format(v, ',.2f')), '%.2f' % v, ' %.2f' % v])
+
+    used, people = set(), []
+    while len(people) < 36:
+        f, l = R.choice(first), R.choice(last)
+        if (f, l) in used:
+            continue
+        used.add((f, l))
+        src = R.choices(SOURCES, [5, 3, 2, 1.5])[0]
+        v = round(R.uniform(lo, hi) / step) * step
+        if step <= 5 and R.random() < 0.25:
+            v += 0.5
+        people.append(dict(f=f, l=l, email='%s.%s@%s' % (f.lower(), l.lower(), R.choice(domains)), phone=make_phone(R),
+                           look=R.choice(looks), day=day(dt.date(2025, 1, 2), dt.date(2025, 12, 10), R), src=src, amt=float(v)))
+    for i, p in enumerate(people):        # planted problems: 3 blank and 2 NULL emails, 3 typo and 2 missing labels, 7 missing amounts
+        if i < 3: p['email'] = ''
+        elif i < 5: p['email'] = None
+        if 5 <= i < 8: p['look'] = typos[i - 5]
+        elif i in (8, 9): p['look'] = '' if i == 8 else None
+        if i in (10, 11, 12, 13): p['amt'] = ''
+        elif i in (14, 15, 16): p['amt'] = None
+
+    def row(p, d):
+        return [None, name_v(p['f'], p['l']), p['email'] if not p['email'] else email_v(p['email']), phone_v(p['phone']),
+                p['look'] if not p['look'] or p['look'] in typos else look_v(p['look']),
+                d.strftime(R.choice(['%Y-%m-%d', '%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d'])), R.choice(p['src'][1]),
+                p['amt'] if p['amt'] in ('', None) else money_v(p['amt'])]
+    rows = [row(p, p['day']) for p in people]
+    again = R.sample(people[17:], 8)      # duplicate sign-ups: the same person registering again a little later
+    for p in again + again[:1]:
+        rows.append(row(p, min(p['day'] + dt.timedelta(days=R.randint(0, 20)), dt.date(2025, 12, 31))))
+    R.shuffle(rows)
+    for i, r in enumerate(rows, 1):
+        r[0] = i
+    cols = ['signup_id', 'full_name', 'email', 'phone', look_col, 'signup_date', 'source', amount_col]
+    ddl = ('-- Raw sign-up import for Module 13 (Data Cleaning). Deliberately messy.\nDROP TABLE IF EXISTS %s;\n'
+           'CREATE TABLE %s (signup_id INT PRIMARY KEY, full_name %s, email %s, phone VARCHAR(20), %s %s,\n'
+           '  signup_date VARCHAR(10), source %s, %s VARCHAR(20));' % (table, table, text, text, look_col, text, text, amount_col))
+    return ddl + '\n' + inserts(table, cols, rows)
+
 # =====================================================================================  SPORT
 def sport():
     R = random.Random(101)
@@ -160,7 +235,9 @@ CREATE TABLE transfers (transfer_id INT PRIMARY KEY, player_id INT REFERENCES pl
         inserts('staff', ['staff_id','team_id','first_name','last_name','role','reports_to'], staff),
         inserts('matches', ['match_id','season','match_date','home_team_id','away_team_id','home_goals','away_goals','attendance','referee'], matches),
         inserts('goals', ['goal_id','match_id','player_id','minute','assist_player_id','is_penalty'], goals),
-        inserts('transfers', ['transfer_id','player_id','from_team_id','to_team_id','fee_usd','transfer_date'], transfers)])
+        inserts('transfers', ['transfer_id','player_id','from_team_id','to_team_id','fee_usd','transfer_date'], transfers),
+        messy(9102, 'fan_signups', 'favourite_team', [t[1] for t in teams], ['Lagos Lion', 'Accra Heart', 'Metro Star'],
+              'membership_fee', '$', 25, 250, 5, 'ng', ['mail.com', 'inbox.ng', 'post.gh'])])
 
 # =====================================================================================  FASHION
 def fashion():
@@ -257,7 +334,9 @@ CREATE TABLE returns (return_id INT PRIMARY KEY, line_id INT REFERENCES sale_lin
         inserts('customers', ['customer_id','first_name','last_name','email','city','join_date','loyalty_tier'], customers),
         inserts('sales', ['sale_id','store_id','staff_id','customer_id','sale_date','channel'], sales),
         inserts('sale_lines', ['line_id','sale_id','product_id','qty','unit_price','discount'], lines),
-        inserts('returns', ['return_id','line_id','return_date','reason'], rets)])
+        inserts('returns', ['return_id','line_id','return_date','reason'], rets),
+        messy(9103, 'newsletter_signups', 'preferred_store', [s[1] for s in stores], ['Lekki', 'Online', 'Osu'],
+              'first_order_value', '$', 30, 450, 5, 'ng', ['mail.com', 'inbox.ng', 'post.gh', 'webmail.ke'])])
 
 # =====================================================================================  POLITICS
 def politics():
@@ -335,7 +414,9 @@ CREATE TABLE polls (poll_id INT PRIMARY KEY, pollster {T}, fieldwork_end DATE, p
         inserts('candidates', ['candidate_id','party_id','first_name','last_name','gender','birth_year'], candidates),
         inserts('elections', ['election_id','election_name','election_date','election_type'], elections),
         inserts('results', ['result_id','election_id','constituency_id','candidate_id','votes'], results),
-        inserts('polls', ['poll_id','pollster','fieldwork_end','party_id','vote_share_pct','sample_size'], polls)])
+        inserts('polls', ['poll_id','pollster','fieldwork_end','party_id','vote_share_pct','sample_size'], polls),
+        messy(9104, 'volunteer_signups', 'region', [r[1] for r in regions], ['Northern Highland', 'Capital', 'East Coast'],
+              'pledge_amount', '$', 5, 500, 5, 'us', ['mail.com', 'aldoria.net', 'post.al'])])
 
 # =====================================================================================  FINANCE
 def add_months(d, n):
@@ -451,7 +532,9 @@ CREATE TABLE repayments (repayment_id INT PRIMARY KEY, loan_id INT REFERENCES lo
         inserts('accounts', ['account_id','customer_id','account_type','opened_date','status'], accounts),
         inserts('transactions', ['txn_id','account_id','txn_date','amount','direction','channel'], txns),
         inserts('loans', ['loan_id','customer_id','officer_id','product','principal','interest_rate_pct','disbursed_date','tenor_months','status'], loans),
-        inserts('repayments', ['repayment_id','loan_id','due_date','amount_due','paid_date','amount_paid'], reps)])
+        inserts('repayments', ['repayment_id','loan_id','due_date','amount_due','paid_date','amount_paid'], reps),
+        messy(9105, 'loan_applications', 'branch', [b[1] for b in branches], ['Trans Amadi', 'Kano', 'Enugu'],
+              'amount_requested', '₦', 50000, 3000000, 10000, 'ng', ['mail.com', 'inbox.ng', 'yahoo.ng'])])
 
 # =====================================================================================  HEALTHCARE
 def healthcare():
@@ -543,7 +626,9 @@ CREATE TABLE prescriptions (prescription_id INT PRIMARY KEY, appointment_id INT 
         inserts('appointments', ['appointment_id','patient_id','doctor_id','scheduled_at','status','wait_minutes'], appts),
         inserts('diagnoses', ['diagnosis_code','description','category'], diags),
         inserts('appointment_diagnoses', ['appointment_id','diagnosis_code'], ad),
-        inserts('prescriptions', ['prescription_id','appointment_id','drug_name','days_supplied','cost'], rx)])
+        inserts('prescriptions', ['prescription_id','appointment_id','drug_name','days_supplied','cost'], rx),
+        messy(9106, 'patient_intake', 'department', [d[1] for d in depts], ['Cardio', 'Paediatric', 'General'],
+              'deposit_paid', '$', 10, 200, 5, 'us', ['mail.com', 'riverside.net', 'post.com'])])
 
 
 if __name__ == '__main__':

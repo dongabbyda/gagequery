@@ -3,7 +3,7 @@ import pytest
 
 pytestmark = pytest.mark.browser
 
-ROUTES = ['learn', 'm01', 'm04', 'm06', 'm08', 'm10', 'm12', 'playground', 'datasets', 'progress', 'about']
+ROUTES = ['learn', 'm00', 'm01', 'm04', 'm06', 'm08', 'm10', 'm12', 'm13', 'm14', 'practice', 'playground', 'datasets', 'progress', 'about']
 
 
 def test_loads_in_worker_without_errors(app):
@@ -23,7 +23,7 @@ def test_every_main_route_renders(app):
         app.page.click('#rail a[data-route=%s]' % route)
         app.page.wait_for_timeout(150)
         assert app.page.inner_text('h1').strip(), route
-    assert app.page.locator('#rail a[data-route^=m]').count() >= 12
+    assert app.page.locator('#rail a[data-route^=m]').count() >= 15
     assert app.real_errors() == []
 
 
@@ -74,3 +74,88 @@ def test_progress_carries_over_from_querycraft(app_factory):
     old = "localStorage.setItem('querycraft-v1', JSON.stringify({ds: 'politics', progress: {}, drafts: {}, hints: {}, helped: {}}))"
     app = app_factory('home', init_script="if (!localStorage.getItem('gagequery-v1')) { %s }" % old)
     assert app.page.eval_on_selector('#ds-select', 'e => e.value') == 'politics'
+
+
+def test_wrong_answer_lists_what_matches_and_names_the_mistake(app):
+    app.open_exercise('m04-e03', 'sales')
+    state, text = app.check('SELECT c.first_name, COUNT(*) FROM customers c JOIN orders o GROUP BY c.customer_id')
+    assert state == 'no'
+    assert app.page.locator('.fb .checklist li').count() >= 2
+    assert 'ON' in text and 'JOIN' in text
+
+
+def test_expected_output_shows_the_model_result(app):
+    app.open_exercise('m03-e01', 'fashion')
+    app.page.click("button:has-text('Show expected output')")
+    app.page.wait_for_selector('.expected table.grid', timeout=10000)
+    assert app.page.locator('.expected tbody tr').count() >= 1
+
+
+def test_cleaning_exercise_requires_trim(app, solution):
+    app.open_exercise('m13-e01', 'finance')
+    no_trim = "SELECT signup_id, REPLACE(UPPER(full_name), '  ', ' ') AS name_clean, LOWER(email) AS email_clean FROM loan_applications ORDER BY signup_id;"
+    assert app.check(no_trim)[0] == 'no'
+    assert app.check(solution('m13', 1, 'finance'))[0] == 'ok'
+
+
+def test_capstone_task_checks(app, solution):
+    app.open_exercise('m14-e05', 'healthcare')
+    assert app.check(solution('m14', 5, 'healthcare'))[0] == 'ok'
+    assert '+200 XP' in app.page.inner_text('.fb.ok')
+
+
+def test_old_progress_migrates_to_xp_streaks_and_practice(app_factory):
+    old = ("localStorage.setItem('gagequery-v1', JSON.stringify({ds: 'sales', drafts: {}, hints: {'m01-e02@sales': 2}, helped: {},"
+           " progress: {'m01-e01': {state: 'solved', ds: 'sales', at: Date.now()}, 'm01-e02': {state: 'solved', ds: 'sales', at: Date.now() - 864e5}}}))")
+    app = app_factory('progress', init_script="if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); %s }" % old)
+    assert '100 XP' in app.page.inner_text('#meter-text')
+    assert app.page.locator('.badge-card.on').count() >= 1
+    assert app.page.locator('figure.radar svg').count() == 1
+    days = app.page.evaluate("[...document.querySelectorAll('.stats div')].find(d => d.innerText.includes('days practised')).querySelector('b').innerText")
+    assert days == '2'
+    app.go('practice')
+    app.page.wait_for_selector('.why-review')
+    assert 'hints' in app.page.inner_text('.stack')
+    assert app.real_errors() == []
+
+
+SEEDED = ("if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.setItem('gagequery-v1', JSON.stringify({v: 2, ds: 'sales',"
+          " drafts: {}, hints: {}, helped: {}, days: {}, reviewed: {}, progress: {%s}})) }")
+
+
+def test_dashboard_map_and_module_page_point_to_the_next_step(app_factory):
+    done = ', '.join("'m00-e0%d': {state: 'solved', ds: 'sales', at: Date.now()}" % i for i in (1, 2, 3))
+    app = app_factory('home', init_script=SEEDED % done)
+    app.page.wait_for_selector('.welcome')
+    assert app.page.get_attribute('.welcome .btn.primary', 'href') == '#m01-e01'
+    app.go('learn')
+    app.page.wait_for_selector('.mod-card.upnext')
+    assert 'module 1' in app.page.inner_text('.mod-card.upnext').lower()
+    app.go('m00')
+    assert 'complete' in app.page.inner_text('.banner')
+    assert app.real_errors() == []
+
+
+def test_solving_the_last_exercise_completes_the_module(app_factory, solution):
+    done = ', '.join("'m00-e0%d': {state: 'solved', ds: 'sales', at: Date.now()}" % i for i in (1, 2))
+    app = app_factory('home', init_script=SEEDED % done)
+    app.open_exercise('m00-e03', 'sales')
+    state, text = app.check(solution('m00', 3, 'sales'))
+    assert state == 'ok' and 'That completes Module 0' in text
+    assert app.page.get_attribute('.fb.ok .btn.primary', 'href') == '#m01'
+
+
+def test_theme_switcher_cycles_system_light_dark_and_remembers(app_factory):
+    app = app_factory('home', color_scheme='dark')
+    root = lambda: app.page.evaluate("document.documentElement.getAttribute('data-theme')")
+    bg = lambda: app.page.evaluate("getComputedStyle(document.body).backgroundColor")
+    assert root() is None and 'Theme: System' in app.page.get_attribute('#theme-btn', 'aria-label')
+    dark_bg = bg()
+    app.page.click('#theme-btn')
+    assert root() == 'light' and bg() != dark_bg
+    app.page.click('#theme-btn')
+    assert root() == 'dark' and bg() == dark_bg
+    app.page.reload(); app.page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    assert root() == 'dark'
+    app.page.click('#theme-btn')
+    assert root() is None and app.page.evaluate("localStorage.getItem('gagequery-theme')") is None
