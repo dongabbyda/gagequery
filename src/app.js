@@ -140,6 +140,18 @@ var Analytics = (function () {
     if (!/^https:\/\/[a-z0-9-]+\.goatcounter\.com$/.test(u || '')) return;
     if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) return;
     endpoint = u;
+    countVisit();
+  }
+  /* Three milestone events answer "how many people": `visit` (once per app load, so GoatCounter counts it once per person
+     per session), `first-visit` (only when this device has no marker yet) and `return-visit` (marker older than a day).
+     The marker is just the date of the last visit, kept on the device; it holds no ID and is never sent. */
+  function countVisit() {
+    var last = 0, KEY = 'gagequery-seen';
+    try { last = +localStorage.getItem(KEY) || 0; } catch (e) {}
+    send('visit', 'visit', true);
+    if (!last) send('first-visit', 'first-visit', true);
+    else if (Date.now() - last > 864e5) send('return-visit', 'return-visit', true);
+    try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
   }
   function send(path, title, isEvent) {
     if (!endpoint) return;
@@ -1232,7 +1244,7 @@ function viewAbout() {
    ['Feedback that names the mistake', 'When an answer is wrong, the checker lists what already matches (columns, row count, each column’s values, order) and points at the most likely cause, such as a missing GROUP BY, a JOIN without ON, or an INNER JOIN that should be a LEFT JOIN.'],
    ['XP, levels, streaks and badges', 'Easy exercises earn 50 XP, Medium 100 and Hard 200, or half if you used the solution. Days you run or check a query count towards your streak. Everything is worked out from the progress saved in this browser.'],
    ['Practice arena', 'The arena brings back exercises you have not solved, needed the solution or hints for, or solved more than a week ago. A mixed challenge gives you an exercise you know on a dataset you have not used for it.'],
-   ['Privacy', 'The public site counts how many people visit and which modules they open, using GoatCounter, a privacy-friendly counter. It sets no cookies and never sees your name, your SQL or your progress, which stay in your browser. It is switched off if your browser sends Do Not Track.'],
+   ['Privacy', 'The public site counts how many people visit and which modules they open, using GoatCounter, a privacy-friendly counter. It sets no cookies and never sees your name, your SQL or your progress, which stay in your browser. To tell new learners from returning ones, your browser keeps the date of your last visit; it is not an ID and is never sent. Everything is switched off if your browser sends Do Not Track.'],
    ['Reset', 'Reset code puts the starter back. Reset data restores the original tables if you changed them with INSERT, UPDATE or DELETE. Both can be undone for 10 seconds.'],
    ['Differences from a MySQL server', 'Integer division and some date functions behave differently between databases, so the model answers multiply by 100.0 when they need decimals. Error messages and EXPLAIN output are worded differently from MySQL\u2019s. Stored procedures and triggers will be shown as reference cards in later modules.']].forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
   p.appendChild(h('h2', { text: 'Keyboard shortcuts' }));
