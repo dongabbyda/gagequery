@@ -64,9 +64,11 @@ function exState(id) { return (S.progress[id] || {}).state || 'new'; }
 function setState(id, st) {
   var cur = exState(id);
   var rank = { 'new': 0, attempted: 1, helped: 2, solved: 3 };
-  var before = earned(), lvl = level().n;
+  var before = earned(), lvl = level().n, ex = EX_BY_ID[id], modWas = ex && modComplete(ex.mod), wasDone = isDone(id);
   if (rank[st] > rank[cur] || (st === 'solved' && cur === 'helped' && !S.helped[id])) S.progress[id] = { state: st, ds: curDs(), at: Date.now() };
   save(); paintRail(); paintMeter();
+  if (ex && !wasDone && isDone(id)) Analytics.event('solved/' + id);
+  if (ex && !modWas && modComplete(ex.mod)) Analytics.event('module-complete/' + ex.mod.id);
   earned().forEach(function (b) { if (before.indexOf(b) < 0) toast('Badge earned: ' + BADGES.filter(function (x) { return x.id === b; })[0].name); });
   if (level().n > lvl) toast('Level up! You are now ' + level().name + '.');
 }
@@ -126,6 +128,34 @@ function modStatus(m) {
 function statusChip(m) { var s = modStatus(m); return h('span', { class: 'status ' + s.key, text: (s.key === 'done' ? '✓ ' : '') + s.label }); }
 function hoursText(m) { return m.minutes < 60 ? m.minutes + ' min' : 'about ' + Math.round(m.minutes / 60) + ' h'; }
 function modComplete(m) { return m.exercises.every(function (e) { return e.level === 'Hard' || isDone(e.id); }); }
+
+/* ================================================================ anonymous visit counting (optional)
+   When the build is given a GoatCounter address, the app reports page views and a few milestones by loading a tiny
+   image from that address: no script, no cookies, no storage, and nothing about the learner or their SQL. It stays off
+   when the build has no address (local runs, tests), or when the browser sends Do Not Track or Global Privacy Control. */
+var Analytics = (function () {
+  var endpoint = null, last = null, sentRef = false;
+  function init() {
+    var m = document.querySelector('meta[name="analytics-endpoint"]'), u = m && m.getAttribute('content');
+    if (!/^https:\/\/[a-z0-9-]+\.goatcounter\.com$/.test(u || '')) return;
+    if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) return;
+    endpoint = u;
+  }
+  function send(path, title, isEvent) {
+    if (!endpoint) return;
+    var q = 'p=' + encodeURIComponent(path) + '&t=' + encodeURIComponent(title || '') + (isEvent ? '&e=true' : '') + '&s=' + [screen.width, screen.height, window.devicePixelRatio || 1].join(',');
+    if (!sentRef && !isEvent) {
+      sentRef = true;
+      try { if (document.referrer && new URL(document.referrer).origin !== location.origin) q += '&r=' + encodeURIComponent(document.referrer); } catch (e) {}
+    }
+    try { new Image().src = endpoint + '/count?' + q + '&rnd=' + Math.random().toString(36).slice(2); } catch (e) {}
+  }
+  return {
+    init: init,
+    page: function (route, title) { if (route !== last) { last = route; send('/' + (route === 'home' ? '' : route), title, false); } },
+    event: function (name) { send(name, name, true); }
+  };
+})();
 
 /* ================================================================ engine (worker with timeout, main-thread fallback) */
 var Engine = (function () {
@@ -1198,6 +1228,7 @@ function viewAbout() {
    ['Feedback that names the mistake', 'When an answer is wrong, the checker lists what already matches (columns, row count, each column’s values, order) and points at the most likely cause, such as a missing GROUP BY, a JOIN without ON, or an INNER JOIN that should be a LEFT JOIN.'],
    ['XP, levels, streaks and badges', 'Easy exercises earn 50 XP, Medium 100 and Hard 200, or half if you used the solution. Days you run or check a query count towards your streak. Everything is worked out from the progress saved in this browser.'],
    ['Practice arena', 'The arena brings back exercises you have not solved, needed the solution or hints for, or solved more than a week ago. A mixed challenge gives you an exercise you know on a dataset you have not used for it.'],
+   ['Privacy', 'The public site counts how many people visit and which modules they open, using GoatCounter, a privacy-friendly counter. It sets no cookies and never sees your name, your SQL or your progress, which stay in your browser. It is switched off if your browser sends Do Not Track.'],
    ['Reset', 'Reset code puts the starter back. Reset data restores the original tables if you changed them with INSERT, UPDATE or DELETE. Both can be undone for 10 seconds.'],
    ['Differences from a MySQL server', 'Integer division and some date functions behave differently between databases, so the model answers multiply by 100.0 when they need decimals. Error messages and EXPLAIN output are worded differently from MySQL\u2019s. Stored procedures and triggers will be shown as reference cards in later modules.']].forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
   p.appendChild(h('h2', { text: 'Keyboard shortcuts' }));
@@ -1255,6 +1286,7 @@ function route(keepScroll) {
   closeRail();
   window.scrollTo(0, keepScroll === true ? y : 0);
   var h1 = pg.querySelector('h1'); document.title = (h1 ? h1.textContent + ' \u00b7 ' : '') + 'GageQuery';
+  Analytics.page(EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about)$/.test(r) ? r : 'home', document.title);
 }
 function closeRail() { rail.classList.remove('open'); $('#scrim').classList.remove('open'); }
 
@@ -1291,6 +1323,7 @@ function boot() {
   $('#scrim').addEventListener('click', closeRail);
   $('#pal-btn').addEventListener('click', openPalette);
   initTheme();
+  Analytics.init();
   $('#pal-kbd').textContent = MOD_KEY + ' K';
   document.addEventListener('click', function (ev) {
     var t = ev.target; while (t && t !== document && !(t.tagName === 'A' && (t.getAttribute('href') || '').charAt(0) === '#')) t = t.parentNode;

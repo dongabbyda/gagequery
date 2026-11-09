@@ -32,6 +32,8 @@ jobs:
       - run: npm ci
       - name: Build (verifies every query on every dataset)
         run: npm run build
+        env:
+          GOATCOUNTER_URL: https://gagequery.goatcounter.com   # anonymous visit counts; remove this line to turn counting off
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
