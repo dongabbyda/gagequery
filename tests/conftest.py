@@ -34,12 +34,27 @@ def base_url():
 
 
 @pytest.fixture(scope='session')
-def browser():
+def playwright_instance():
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        b = p.chromium.launch()
-        yield b
-        b.close()
+        yield p
+
+
+@pytest.fixture(scope='session')
+def browser(playwright_instance):
+    b = playwright_instance.chromium.launch()
+    yield b
+    b.close()
+
+
+@pytest.fixture(scope='session')
+def firefox(playwright_instance):
+    try:
+        b = playwright_instance.firefox.launch()
+    except Exception:
+        pytest.skip('Firefox is not installed (python -m playwright install firefox)')
+    yield b
+    b.close()
 
 
 class App:

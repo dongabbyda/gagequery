@@ -194,7 +194,11 @@ var Engine = (function () {
   }
   function open(ds) {
     if (opened[ds]) return opened[ds];
-    opened[ds] = call({ cmd: 'open', ds: ds, sql: DSETS[ds].sql }, 30000).then(function (r) { if (r.error) { delete opened[ds]; throw new Error(r.error); } return r; });
+    function attempt() { return call({ cmd: 'open', ds: ds, sql: DSETS[ds].sql }, 30000).then(function (r) { if (r.error) throw new Error(r.error); return r; }); }
+    /* Some browsers give a background worker a much smaller call stack, or restrict it. If the worker cannot start the
+       engine, retry once on the main page, where the stack is larger. */
+    opened[ds] = attempt().catch(function (err) { if (mode === 'worker') { fallback(); return attempt(); } throw err; })
+      .catch(function (err) { delete opened[ds]; throw err; });
     return opened[ds];
   }
   function req(ds, msg, ms) { return open(ds).then(function () { msg.ds = ds; return call(msg, ms || 3000); }); }
@@ -1338,7 +1342,20 @@ function boot() {
   paintRail(); paintMeter();
   setDs(curDs(), true);
   route();
-  Engine.open(curDs()).then(function () { $('#engine').classList.add('ready'); $('#engine').textContent = 'Engine ready'; }).catch(function (e) { $('#engine').textContent = 'Engine failed: ' + e.message; });
+  Engine.open(curDs()).then(function () { $('#engine').classList.add('ready'); $('#engine').textContent = 'Engine ready'; }).catch(engineProblem);
+}
+/* If the SQL engine cannot start anywhere, say so in plain words and give the learner something to send back. */
+function engineProblem(err) {
+  var details = 'Error: ' + (err && err.message || err) + '\nEngine: ' + Engine.mode() + '\nBrowser: ' + navigator.userAgent + '\nPage: ' + location.href.split('#')[0];
+  var copy = h('button', { class: 'btn', type: 'button', text: 'Copy details', onclick: function () { copyText(details, copy); } });
+  $('#engine').textContent = 'Engine problem';
+  var box = h('div', { class: 'banner warn', role: 'alert', id: 'engine-problem' },
+    h('b', { text: 'GageQuery could not start its SQL engine in this browser.' }),
+    h('span', { text: 'Reload with Ctrl+F5, update your browser, or open the site in the latest Chrome, Edge or Firefox. If it keeps happening, copy the details and send them to the course owner.' }),
+    h('pre', { class: 'skeleton engine-details', text: details }),
+    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', text: 'Reload the page', onclick: function () { location.reload(); } }), copy));
+  var old = $('#engine-problem'); if (old) old.remove();
+  $('.topbar').after(box);
 }
 
 /* ================================================================ self-test hook (used for verification) */

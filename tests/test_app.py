@@ -309,3 +309,51 @@ def test_counter_respects_do_not_track_and_is_off_without_an_address(browser, ba
     page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
     assert hits == []
     ctx.close()
+
+
+# A stand-in Worker that answers the first 'open' request with the error some browsers raise when a worker's stack is too small.
+BROKEN_WORKER = ("(() => { const W = window.Worker; window.Worker = function (url) { const real = new W(url), self = this;"
+                 " this.postMessage = m => { if (m.cmd === 'open') setTimeout(() => self.onmessage && self.onmessage({ data: { id: m.id, error: 'too much recursion' } }), 0); else real.postMessage(m); };"
+                 " this.terminate = () => real.terminate(); real.onmessage = e => self.onmessage && self.onmessage(e); real.onerror = e => self.onerror && self.onerror(e); }; })();")
+
+
+def test_engine_retries_on_the_main_page_when_the_worker_cannot_start(app_factory, solution):
+    app = app_factory('home', init_script=BROKEN_WORKER)
+    assert app.page.evaluate("typeof window.__qcEngine") == 'object', 'expected the main-page engine after the worker failed'
+    assert app.page.query_selector('#engine-problem') is None
+    app.open_exercise('m00-e01', 'sales')
+    assert app.check(solution('m00', 1, 'sales'))[0] == 'ok'
+    assert app.real_errors() == []
+
+
+def test_engine_failure_is_explained_with_details_to_send(browser, base_url):
+    ctx = browser.new_context(viewport={'width': 1400, 'height': 900})
+    # make the main-page engine fail too: a read-only initSqlJs that rejects
+    ctx.add_init_script(BROKEN_WORKER + "Object.defineProperty(window, 'initSqlJs', { value: () => Promise.reject(new Error('too much recursion')), writable: false, configurable: false });")
+    page = ctx.new_page()
+    page.goto(base_url + '#home')
+    box = page.wait_for_selector('#engine-problem', timeout=30000)
+    text = box.inner_text()
+    assert 'could not start its SQL engine' in text and 'too much recursion' in text and 'Browser:' in text
+    assert page.inner_text('#engine') == 'Engine problem'
+    assert page.locator("#engine-problem button:has-text('Copy details')").count() == 1
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert page.query_selector('#engine-problem') is not None, 'the explanation must stay visible while navigating'
+    ctx.close()
+
+
+def test_engine_and_checker_work_in_firefox_too(firefox, base_url):
+    page = firefox.new_page(viewport={'width': 1400, 'height': 900})
+    errors = []
+    page.on('pageerror', lambda e: errors.append(str(e)))
+    page.goto(base_url + '#home')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=90000)
+    assert page.evaluate("typeof window.__qcEngine") == 'undefined', 'Firefox should run the engine in a worker'
+    r = page.evaluate("window.__qcSelfTest(['sales'])")
+    assert r['problems'] == [] and r['checked'] > 100
+    page.evaluate("location.hash = 'm00-e01'"); page.wait_for_selector('.task')
+    page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", 'SELECT COUNT(*) AS row_count FROM orders;')
+    page.click(".action-bar button:has-text('Check answer')")
+    assert 'ok' in page.wait_for_selector('.fb', timeout=20000).get_attribute('class').split()
+    assert errors == []
+    page.close()
