@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: pip install -r requirements-dev.txt
-      - run: python -m playwright install --with-deps chromium
+      - run: python -m playwright install --with-deps chromium firefox
       - name: Build (verifies every query on every dataset)
         run: npm run build
       - name: Test
