@@ -280,7 +280,7 @@ def counted_session(browser, base_url, extra_init=None, with_counter=True):
 def test_visits_are_counted_anonymously_when_a_counter_is_configured(browser, base_url, solution):
     ctx, page, hits = counted_session(browser, base_url)
     paths = lambda: [h['p'] for h in hits if h.get('e') != 'true']
-    assert paths() == ['/'] and hits[0]['t'].endswith('GageQuery')
+    assert paths() == ['/'] and [h for h in hits if h.get('e') != 'true'][0]['t'].endswith('GageQuery')
     page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(300)
     page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(200)          # same route again: not counted twice
     page.evaluate("location.hash = 'm04-e03'"); page.wait_for_timeout(300)
@@ -292,10 +292,10 @@ def test_visits_are_counted_anonymously_when_a_counter_is_configured(browser, ba
     page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", solution('m00', 1, 'sales'))
     page.click(".action-bar button:has-text('Check answer')"); page.wait_for_selector('.fb.ok', timeout=15000); page.wait_for_timeout(300)
     events = [h['p'] for h in hits if h.get('e') == 'true']
-    assert events == ['solved/m00-e01']
+    assert events == ['visit', 'first-visit', 'solved/m00-e01']
     blob = ' '.join(str(v) for h in hits for v in h.values()).lower()
     assert 'select' not in blob and 'count(' not in blob
-    assert all(h['p'].startswith(('/', 'solved/', 'module-complete/')) for h in hits)
+    assert all(h['p'].startswith(('/', 'solved/', 'module-complete/')) or h['p'] in ('visit', 'first-visit', 'return-visit') for h in hits)
     assert page.evaluate("localStorage.length") >= 1 and 'goatcounter' not in str(page.evaluate("document.cookie"))
     ctx.close()
 
@@ -308,4 +308,25 @@ def test_counter_respects_do_not_track_and_is_off_without_an_address(browser, ba
     ctx, page, hits = counted_session(browser, base_url, with_counter=False)
     page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
     assert hits == []
+    ctx.close()
+
+
+def test_new_and_returning_visitors_are_told_apart_without_an_id(browser, base_url):
+    ctx, page, hits = counted_session(browser, base_url)
+    events = lambda: [h['p'] for h in hits if h.get('e') == 'true']
+    assert events() == ['visit', 'first-visit']
+    marker = page.evaluate("localStorage.getItem('gagequery-seen')")
+    assert marker.isdigit(), 'the marker is only a timestamp, never an identifier'
+    page.reload(); page.wait_for_selector('#engine.ready', state='attached', timeout=60000); page.wait_for_timeout(300)
+    assert events() == ['visit', 'first-visit', 'visit'], 'a quick reload is a visit but not a new or returning visitor'
+    page.evaluate("localStorage.setItem('gagequery-seen', String(Date.now() - 3 * 864e5))")
+    page.reload(); page.wait_for_selector('#engine.ready', state='attached', timeout=60000); page.wait_for_timeout(300)
+    assert events() == ['visit', 'first-visit', 'visit', 'visit', 'return-visit']
+    assert not any(k in str(v).lower() for h in hits for k, v in h.items() for k in ['gagequery-seen'])
+    ctx.close()
+
+
+def test_no_marker_is_stored_when_do_not_track_is_on(browser, base_url):
+    ctx, page, hits = counted_session(browser, base_url, extra_init="Object.defineProperty(navigator, 'doNotTrack', {get: () => '1'});")
+    assert hits == [] and page.evaluate("localStorage.getItem('gagequery-seen')") is None
     ctx.close()
