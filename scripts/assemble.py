@@ -7,7 +7,7 @@ Writes  dist/index.html                 the site: one HTML file plus public/* (d
 
 Everything (engine, editor, content, datasets) is inlined so the page works offline and needs no API.
 """
-import base64, json, os, shutil, subprocess, sys
+import base64, json, os, re, shutil, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC, NM = os.path.join(ROOT, 'src'), os.path.join(ROOT, 'node_modules')
@@ -36,6 +36,19 @@ def font_css():
         data = base64.b64encode(open(os.path.join(NM, '@fontsource-variable', pkg, 'files', name), 'rb').read()).decode()
         out.append("@font-face{font-family:'%s';font-style:normal;font-weight:200 900;font-display:swap;src:url(data:font/woff2;base64,%s) format('woff2')}" % (family, data))
     return ''.join(out)
+
+
+def analytics_meta():
+    """Optional anonymous visit counting: set GOATCOUNTER_URL (for example https://gagequery.goatcounter.com) when building.
+    Without it the page contains no counter, which is what local runs and tests use."""
+    url = os.environ.get('GOATCOUNTER_URL', '').strip().rstrip('/')
+    if not url:
+        return ''
+    if not re.fullmatch(r'https://[a-z0-9-]+\.goatcounter\.com', url):
+        sys.exit('GOATCOUNTER_URL must look like https://yourcode.goatcounter.com')
+    if url not in read(PUBLIC, '_headers'):
+        sys.exit('Add %s to img-src in public/_headers so the browser may load the counter image.' % url)
+    return '<meta name="analytics-endpoint" content="%s">\n' % url
 
 
 def csp_meta():
@@ -86,7 +99,7 @@ def main():
         path = os.path.join(DIST, name)
         shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
     shutil.copytree(PUBLIC, DIST, dirs_exist_ok=True)
-    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() +
+    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() + analytics_meta() +
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
             '<meta name="description" content="GageQuery: learn SQL by doing. From your first query to a capstone business review on six real-world datasets, every answer checked in your browser.">\n'
             '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n'

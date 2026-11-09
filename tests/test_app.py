@@ -217,3 +217,64 @@ def test_odd_urls_fall_back_to_home_without_errors(app):
         app.page.wait_for_timeout(150)
         assert app.page.inner_text('h1').strip(), r
     assert app.real_errors() == []
+
+
+COUNTER = 'https://gagequery.goatcounter.com'
+ADD_COUNTER = ("document.addEventListener('readystatechange', () => { if (document.readyState === 'interactive' && !document.querySelector('meta[name=analytics-endpoint]')) {"
+               " const m = document.createElement('meta'); m.name = 'analytics-endpoint'; m.content = '%s'; document.head.appendChild(m); } });" % COUNTER)
+
+
+def counted_session(browser, base_url, extra_init=None, with_counter=True):
+    """A page whose counter requests are captured and answered locally, so tests never reach the real GoatCounter."""
+    from urllib.parse import urlparse, parse_qs
+    ctx = browser.new_context(viewport={'width': 1400, 'height': 900})
+    hits = []
+
+    def answer(route):
+        q = parse_qs(urlparse(route.request.url).query)
+        hits.append({k: v[0] for k, v in q.items()})
+        route.fulfill(status=200, content_type='image/gif', body=b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;')
+    ctx.route(COUNTER + '/**', answer)
+    if extra_init:
+        ctx.add_init_script(extra_init)
+    if with_counter:
+        ctx.add_init_script(ADD_COUNTER)
+    page = ctx.new_page()
+    page.goto(base_url + '#home')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    page.wait_for_timeout(300)
+    return ctx, page, hits
+
+
+def test_visits_are_counted_anonymously_when_a_counter_is_configured(browser, base_url, solution):
+    ctx, page, hits = counted_session(browser, base_url)
+    paths = lambda: [h['p'] for h in hits if h.get('e') != 'true']
+    assert paths() == ['/'] and hits[0]['t'].endswith('GageQuery')
+    page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(300)
+    page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(200)          # same route again: not counted twice
+    page.evaluate("location.hash = 'm04-e03'"); page.wait_for_timeout(300)
+    page.evaluate("location.hash = 'constructor'"); page.wait_for_timeout(300)  # unknown routes are counted as home, never as raw text
+    assert paths() == ['/', '/m04', '/m04-e03', '/']
+    # solving an exercise sends one milestone, and never the learner's SQL
+    page.select_option('#ds-select', 'sales'); page.wait_for_timeout(300)
+    page.evaluate("location.hash = 'm00-e01'"); page.wait_for_selector('.task')
+    page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", solution('m00', 1, 'sales'))
+    page.click(".action-bar button:has-text('Check answer')"); page.wait_for_selector('.fb.ok', timeout=15000); page.wait_for_timeout(300)
+    events = [h['p'] for h in hits if h.get('e') == 'true']
+    assert events == ['solved/m00-e01']
+    blob = ' '.join(str(v) for h in hits for v in h.values()).lower()
+    assert 'select' not in blob and 'count(' not in blob
+    assert all(h['p'].startswith(('/', 'solved/', 'module-complete/')) for h in hits)
+    assert page.evaluate("localStorage.length") >= 1 and 'goatcounter' not in str(page.evaluate("document.cookie"))
+    ctx.close()
+
+
+def test_counter_respects_do_not_track_and_is_off_without_an_address(browser, base_url):
+    ctx, page, hits = counted_session(browser, base_url, extra_init="Object.defineProperty(navigator, 'doNotTrack', {get: () => '1'});")
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert hits == []
+    ctx.close()
+    ctx, page, hits = counted_session(browser, base_url, with_counter=False)
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert hits == []
+    ctx.close()

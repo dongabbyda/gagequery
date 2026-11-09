@@ -74,6 +74,9 @@ def test_page_has_no_remote_resources_and_carries_its_own_csp():
     assert 'http-equiv="Content-Security-Policy"' in head, 'hosts without header support (GitHub Pages) rely on the meta policy'
     meta = head.split('http-equiv="Content-Security-Policy" content="')[1].split('"')[0]
     assert "default-src 'none'" in meta and "script-src 'self' 'unsafe-inline'" in meta and 'frame-ancestors' not in meta
-    assert 'http' not in meta.replace("'self'", ''), 'the policy must not allow any remote origin'
+    allowed = meta.replace("'self'", '').replace('https://gagequery.goatcounter.com', '')
+    assert 'http' not in allowed, 'the policy may allow only the anonymous visit counter, as an image source'
+    assert 'img-src' in meta and meta.split('img-src')[1].split(';')[0].count('http') == 1
+    assert 'analytics-endpoint' not in head, 'a normal build has no counter; only a build given GOATCOUNTER_URL does'
     headers = open(need(os.path.join(ROOT, 'public', '_headers')), encoding='utf-8').read()
     assert 'googleapis' not in headers and "frame-ancestors 'none'" in headers
