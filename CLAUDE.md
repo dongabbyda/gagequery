@@ -12,7 +12,7 @@ plain English, short sentences, business framing, no jargon without a definition
 ```bash
 npm ci                                   # JS build deps (CodeMirror, sql.js, terser) — pinned
 pip install -r requirements-dev.txt      # pytest + Playwright
-python -m playwright install chromium    # once, for browser tests (python3 on macOS/Linux)
+python -m playwright install chromium firefox   # once, for browser tests (python3 on macOS/Linux)
 
 npm run build        # content (verify every query) + assemble dist/ and the artifact fragment
 npm test             # full suite: content checks + headless browser tests (about 1.5 min)
