@@ -129,32 +129,22 @@ function statusChip(m) { var s = modStatus(m); return h('span', { class: 'status
 function hoursText(m) { return m.minutes < 60 ? m.minutes + ' min' : 'about ' + Math.round(m.minutes / 60) + ' h'; }
 function modComplete(m) { return m.exercises.every(function (e) { return e.level === 'Hard' || isDone(e.id); }); }
 
-/* ================================================================ anonymous visit counting (optional)
-   When the build is given a GoatCounter address, the app reports page views and a few milestones by loading a tiny
-   image from that address: no script, no cookies, no storage, and nothing about the learner or their SQL. It stays off
-   when the build has no address (local runs, tests), or when the browser sends Do Not Track or Global Privacy Control. */
+/* ================================================================ privacy: consent first (GDPR, ePrivacy and Nigeria's NDPA)
+   Necessary storage (progress, settings, the privacy choice itself) never leaves the device and needs no consent.
+   The two optional tools (cookie-free visit counting with GoatCounter, and Google Analytics with cookies) do nothing at
+   all, and store nothing, until the learner says yes to each one. Do Not Track or Global Privacy Control means no to
+   both, with no banner. Choices are recorded with a date and the notice version, and asked again after 12 months. */
+var PRIVACY = { contact: 'gagexplorerinc@gmail.com', owner: 'GageQuery', updated: '10 November 2026', version: 1 };
+
+/* Anonymous visit counting: a 1x1 image from GoatCounter per page view and milestone. No script and no cookies. */
 var Analytics = (function () {
-  var endpoint = null, last = null, sentRef = false;
+  var endpoint = null, active = false, last = null, sentRef = false, MARK = 'gagequery-seen';
   function init() {
     var m = document.querySelector('meta[name="analytics-endpoint"]'), u = m && m.getAttribute('content');
-    if (!/^https:\/\/[a-z0-9-]+\.goatcounter\.com$/.test(u || '')) return;
-    if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) return;
-    endpoint = u;
-    countVisit();
-  }
-  /* Three milestone events answer "how many people": `visit` (once per app load, so GoatCounter counts it once per person
-     per session), `first-visit` (only when this device has no marker yet) and `return-visit` (marker older than a day).
-     The marker is just the date of the last visit, kept on the device; it holds no ID and is never sent. */
-  function countVisit() {
-    var last = 0, KEY = 'gagequery-seen';
-    try { last = +localStorage.getItem(KEY) || 0; } catch (e) {}
-    send('visit', 'visit', true);
-    if (!last) send('first-visit', 'first-visit', true);
-    else if (Date.now() - last > 864e5) send('return-visit', 'return-visit', true);
-    try { localStorage.setItem(KEY, String(Date.now())); } catch (e) {}
+    if (/^https:\/\/[a-z0-9-]+\.goatcounter\.com$/.test(u || '')) endpoint = u;
   }
   function send(path, title, isEvent) {
-    if (!endpoint) return;
+    if (!active) return;
     var q = 'p=' + encodeURIComponent(path) + '&t=' + encodeURIComponent(title || '') + (isEvent ? '&e=true' : '') + '&s=' + [screen.width, screen.height, window.devicePixelRatio || 1].join(',');
     if (!sentRef && !isEvent) {
       sentRef = true;
@@ -162,55 +152,58 @@ var Analytics = (function () {
     }
     try { new Image().src = endpoint + '/count?' + q + '&rnd=' + Math.random().toString(36).slice(2); } catch (e) {}
   }
+  /* `visit` once per app load (GoatCounter counts it once per person per session), `first-visit` when this device has no
+     marker yet, `return-visit` when the marker is over a day old. The marker is only the date of the last visit. */
+  function countVisit() {
+    var prev = 0;
+    try { prev = +localStorage.getItem(MARK) || 0; } catch (e) {}
+    send('visit', 'visit', true);
+    if (!prev) send('first-visit', 'first-visit', true);
+    else if (Date.now() - prev > 864e5) send('return-visit', 'return-visit', true);
+    try { localStorage.setItem(MARK, String(Date.now())); } catch (e) {}
+  }
+  function pageNow(route, title) { send('/' + (route === 'home' ? '' : route), title, false); }
   return {
     init: init,
-    page: function (route, title) { if (route !== last) { last = route; send('/' + (route === 'home' ? '' : route), title, false); } },
+    configured: function () { return !!endpoint; },
+    enable: function () { if (!endpoint || active) return; active = true; countVisit(); if (last) pageNow(last[0], last[1]); },
+    disable: function () { active = false; try { localStorage.removeItem(MARK); } catch (e) {} },
+    page: function (route, title) { if (last && last[0] === route) return; last = [route, title]; if (active) pageNow(route, title); },
     event: function (name) { send(name, name, true); }
   };
 })();
 
-/* ================================================================ Google Analytics, only with consent
-   Nothing from Google loads until the learner clicks Allow. "No thanks" (or Do Not Track / Global Privacy Control) means
-   no script, no cookies and no requests to Google. Ads features stay denied either way. The choice is kept on this
-   device and can be changed on My progress; switching off disables GA and deletes its cookies. */
+/* Google Analytics 4: loaded only after consent, with advertising features denied and cookies kept at most 13 months. */
 var GA = (function () {
-  var id = null, loaded = false, last = null, KEY = 'gagequery-analytics';
-  function choice() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
-  function remember(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+  var id = null, loaded = false, last = null;
   function init() {
     var m = document.querySelector('meta[name="ga-measurement-id"]'), v = m && m.getAttribute('content');
-    if (!/^G-[A-Z0-9]{4,16}$/.test(v || '')) return;
-    if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) return;
-    id = v;
-    if (choice() === 'granted') load();
-    else if (choice() !== 'denied') showBanner();
-  }
-  function load() {
-    if (loaded || !id) return;
-    loaded = true;
-    window['ga-disable-' + id] = false;
-    window.dataLayer = window.dataLayer || [];
-    window.gtag = function () { window.dataLayer.push(arguments); };   // gtag needs the arguments object itself
-    window.gtag('consent', 'default', { analytics_storage: 'granted', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });
-    window.gtag('js', new Date());
-    window.gtag('config', id, { send_page_view: false });
-    var s = document.createElement('script');
-    s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
-    document.head.appendChild(s);
-    if (last) sendPage(last[0], last[1]);
+    if (/^G-[A-Z0-9]{4,16}$/.test(v || '')) id = v;
   }
   /* The app uses #routes; GA ignores the part after #, so each route is reported as a path such as /gagequery/m04. */
   function sendPage(route, title) {
     var base = location.origin + location.pathname.replace(/\/+$/, '');
     window.gtag('event', 'page_view', { page_location: base + '/' + (route === 'home' ? '' : route), page_title: title });
   }
-  function page(route, title) {
-    if (last && last[0] === route) return;
-    last = [route, title];
-    if (loaded) sendPage(route, title);
+  function enable() {
+    if (!id) return;
+    window['ga-disable-' + id] = false;
+    if (loaded) { window.gtag('consent', 'update', { analytics_storage: 'granted' }); return; }
+    loaded = true;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };   // gtag needs the arguments object itself
+    window.gtag('consent', 'default', { analytics_storage: 'granted', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });
+    window.gtag('js', new Date());
+    window.gtag('config', id, { send_page_view: false, cookie_expires: 34128000, allow_google_signals: false, allow_ad_personalization_signals: false });
+    var s = document.createElement('script');
+    s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
+    document.head.appendChild(s);
+    if (last) sendPage(last[0], last[1]);
   }
-  function event(name, params) { if (loaded) window.gtag('event', name, params || {}); }
-  function deleteCookies() {
+  function disable() {
+    if (!id) return;
+    window['ga-disable-' + id] = true;
+    if (loaded && window.gtag) window.gtag('consent', 'update', { analytics_storage: 'denied' });
     document.cookie.split(';').forEach(function (c) {
       var name = c.split('=')[0].trim();
       if (!/^_ga(_|$)/.test(name)) return;
@@ -219,35 +212,106 @@ var GA = (function () {
       domains.forEach(function (d) { document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/' + (d ? '; domain=' + d : ''); });
     });
   }
-  function set(granted) {
-    remember(granted ? 'granted' : 'denied');
-    hideBanner();
-    if (granted) {
-      if (!loaded) { load(); return; }
-      window['ga-disable-' + id] = false;
-      window.gtag('consent', 'update', { analytics_storage: 'granted' });
-      return;
-    }
-    if (id) window['ga-disable-' + id] = true;
-    if (loaded && window.gtag) window.gtag('consent', 'update', { analytics_storage: 'denied' });
-    deleteCookies();
-  }
-  function hideBanner() { var b = document.getElementById('consent'); if (b) b.remove(); }
-  function showBanner() {
-    if (document.getElementById('consent')) return;
-    var b = h('section', { id: 'consent', class: 'consent', role: 'region', 'aria-label': 'Analytics choice' },
-      h('p', null, h('b', { text: 'Help improve GageQuery? ' }), h('span', { text: 'With your permission we use Google Analytics cookies to see which lessons help and where learners get stuck. We never send your SQL, your name or your progress, and the course works the same either way. ' }), h('a', { href: '#about', text: 'What is collected' })),
-      h('div', { class: 'actions' },
-        h('button', { class: 'btn primary sm', type: 'button', text: 'Allow', onclick: function () { set(true); toast('Thank you. You can change this on My progress.'); } }),
-        h('button', { class: 'btn sm', type: 'button', text: 'No thanks', onclick: function () { set(false); toast('No problem. Google Analytics stays off.'); } })));
-    document.body.appendChild(b);
-  }
   return {
-    init: init, page: page, event: event, set: set,
-    available: function () { return !!id; },
-    on: function () { return choice() === 'granted'; }
+    init: init, enable: enable, disable: disable,
+    configured: function () { return !!id; },
+    page: function (route, title) { if (last && last[0] === route) return; last = [route, title]; if (loaded && !window['ga-disable-' + id]) sendPage(route, title); },
+    event: function (name, params) { if (loaded && !window['ga-disable-' + id]) window.gtag('event', name, params || {}); }
   };
 })();
+
+var Consent = (function () {
+  var KEY = 'gagequery-consent', MAX_AGE = 365 * 864e5;
+  function signal() { return navigator.doNotTrack === '1' || window.doNotTrack === '1' || !!navigator.globalPrivacyControl; }
+  function relevant() { return Analytics.configured() || GA.configured(); }
+  function record() {
+    try {
+      var c = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (c && c.v === PRIVACY.version && typeof c.at === 'number' && Date.now() - c.at < MAX_AGE && typeof c.counting === 'boolean' && typeof c.ga === 'boolean') return c;
+    } catch (e) {}
+    return null;
+  }
+  function apply(c) {
+    if (c && c.counting) Analytics.enable(); else Analytics.disable();
+    if (c && c.ga) GA.enable(); else GA.disable();
+  }
+  function save(counting, ga) {
+    var c = { v: PRIVACY.version, at: Date.now(), counting: !!counting && Analytics.configured(), ga: !!ga && GA.configured() };
+    try { localStorage.setItem(KEY, JSON.stringify(c)); localStorage.removeItem('gagequery-analytics'); } catch (e) {}
+    apply(c);
+    var b = document.getElementById('consent'); if (b) b.remove();
+    return c;
+  }
+  function init() {
+    try { localStorage.removeItem('gagequery-analytics'); } catch (e) {}   // the earlier GA-only choice did not cover visit counting, so ask again
+    if (!relevant() || signal()) { apply(null); return; }
+    var c = record();
+    if (c) apply(c); else banner();
+  }
+  function banner() {
+    if (document.getElementById('consent')) return;
+    var b = h('section', { id: 'consent', class: 'consent', role: 'region', 'aria-label': 'Privacy choices' });
+    var intro = h('div', { class: 'consent-intro' },
+      h('p', null, h('b', { text: 'Your privacy choices. ' }), h('span', { text: 'With your permission we use ' + [Analytics.configured() ? 'visit counting (GoatCounter, no cookies)' : '', GA.configured() ? 'Google Analytics (cookies)' : ''].filter(Boolean).join(' and ') + ' to see which lessons help and where learners get stuck. We never collect your name, your SQL or your progress, and the course works the same whatever you choose. ' }), h('a', { href: '#privacy', text: 'Read the privacy notice' })),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn strong sm', type: 'button', text: 'Accept all', onclick: function () { save(true, true); toast('Thank you. You can change this at any time under Privacy.'); } }),
+        h('button', { class: 'btn strong sm', type: 'button', text: 'Reject all', onclick: function () { save(false, false); toast('Nothing optional will run. You can change this under Privacy.'); } }),
+        h('button', { class: 'btn ghost sm', type: 'button', text: 'Choose', 'aria-expanded': 'false', onclick: function () { intro.hidden = true; b.appendChild(choices(function () { toast('Your choices are saved.'); })); } })));
+    b.appendChild(intro);
+    document.body.appendChild(b);
+  }
+  /* The same switches serve the banner, the Privacy page and My progress. Both start off unless already chosen. */
+  function choices(onSave) {
+    var c = record() || { counting: false, ga: false };
+    var box = h('div', { class: 'choices' });
+    box.appendChild(h('div', { class: 'choice' }, h('input', { type: 'checkbox', id: 'ch-need', checked: true, disabled: true }),
+      h('label', { for: 'ch-need' }, h('b', { text: 'Necessary (always on)' }), h('span', { text: 'Your progress, settings and these choices, saved in your browser. Not cookies, and never sent anywhere.' }))));
+    var cnt = null, ga = null;
+    if (Analytics.configured()) {
+      cnt = h('input', { type: 'checkbox', id: 'ch-count', checked: c.counting });
+      box.appendChild(h('div', { class: 'choice' }, cnt, h('label', { for: 'ch-count' }, h('b', { text: 'Visit counting (GoatCounter)' }), h('span', { text: 'Counts visits and the lessons opened, without cookies. Saves only the date of your last visit, to tell new visitors from returning ones.' }))));
+    }
+    if (GA.configured()) {
+      ga = h('input', { type: 'checkbox', id: 'ch-ga', checked: c.ga });
+      box.appendChild(h('div', { class: 'choice' }, ga, h('label', { for: 'ch-ga' }, h('b', { text: 'Google Analytics (cookies)' }), h('span', { text: 'Shows how learners move through the course: pages, exercises solved and modules completed. Uses Google cookies for up to 13 months; advertising features are off.' }))));
+    }
+    if (signal()) box.appendChild(h('p', { class: 'muted sm', text: 'Your browser asks sites not to track you (Do Not Track or Global Privacy Control), so the optional tools stay off.' }));
+    box.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn primary sm', type: 'button', text: 'Save my choices', disabled: signal(), onclick: function () {
+      save(cnt ? cnt.checked : false, ga ? ga.checked : false);
+      if (onSave) onSave();
+    } })));
+    return box;
+  }
+  return { init: init, relevant: relevant, choices: choices, record: record, signal: signal };
+})();
+
+function viewPrivacy() {
+  var p = page('prose');
+  p.appendChild(h('div', { class: 'eyebrow', text: 'Privacy' }));
+  p.appendChild(h('h1', { text: 'Privacy notice' }));
+  p.appendChild(h('p', { class: 'muted', text: 'Version ' + PRIVACY.version + ' · last updated ' + PRIVACY.updated }));
+  if (Consent.relevant()) {
+    p.appendChild(h('h2', { text: 'Your choices' }));
+    var c = Consent.record();
+    p.appendChild(h('p', { class: 'muted', text: c ? 'You last chose on ' + new Date(c.at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) + '. Change anything below and press Save; it takes effect straight away.' : 'You have not chosen yet. Nothing optional runs until you do.' }));
+    p.appendChild(Consent.choices(function () { toast('Your choices are saved.'); route(true); }));
+  }
+  var S1 = [
+    ['The short version', 'GageQuery is a free SQL course that runs in your browser. Your progress stays on your device. We do not ask for your name or email, and we never collect your SQL or answers. Two optional tools help us improve the course, and they run only if you say yes.'],
+    ['Who is responsible', PRIVACY.owner + ' runs this site and decides how the optional tools are used. For any privacy question or request, email ' + PRIVACY.contact + '.'],
+    ['Stored on your device (necessary)', 'Your progress, drafts, hints, practice days, review times, chosen dataset, theme and these privacy choices are saved in your browser’s local storage. They are not cookies, they are never sent to us or anyone else, and the course cannot work without them. You can download, import or erase them on My progress, or by clearing this site’s data in your browser.'],
+    ['Optional: visit counting (GoatCounter)', 'If you allow it, your browser sends GoatCounter (goatcounter.com) the page you open, its title, your screen size, the site you came from, and milestones such as "solved/m03-e02" or "module-complete/m04". GoatCounter uses your IP address and browser type briefly to avoid counting the same visit twice and, according to GoatCounter, never stores them. No cookies are used. We also save the date of your last visit on your device to tell new visitors from returning ones. Purpose: knowing how many people use the course and which lessons they reach. Legal basis: your consent.'],
+    ['Optional: Google Analytics', 'If you allow it, Google Analytics records the pages you open, the exercises you solve, the modules you complete, your device and browser type and your approximate location, using Google cookies (_ga and _ga_*) for up to 13 months. Advertising features, Google signals and ad personalisation are off. Google stores the event data for 2 months. Purpose: understanding how learners move through the course and where they get stuck. Legal basis: your consent. The provider is Google (Google Ireland Limited for people in the EEA and UK, and Google LLC in the United States).'],
+    ['International transfers', 'Google may process data in the United States. Google LLC is certified under the EU-US Data Privacy Framework and offers standard contractual clauses. Under the NDPA, transfers outside Nigeria rely on your consent and these safeguards. If you prefer, choose Reject all and nothing is sent.'],
+    ['What we never collect', 'Your name, email, phone number, the SQL you write, your answers, or your progress. We do not sell data, show ads or share data with anyone apart from the two tools above.'],
+    ['Your rights', 'Under the GDPR and the Nigeria Data Protection Act you can ask to access, correct or delete personal data, object to or restrict its use, and withdraw consent at any time. Withdrawing is as easy as giving: open Privacy in the menu, change the switches and save. Switching a tool off stops it at once and deletes what it stored on your device. Because we hold no names or emails, we usually cannot link analytics records to you; email ' + PRIVACY.contact + ' and we will help as far as we can.'],
+    ['Complaints', 'You can complain to the Nigeria Data Protection Commission (ndpc.gov.ng), to the data protection authority in your EU or EEA country, or in the UK to the Information Commissioner’s Office (ico.org.uk). We would appreciate the chance to put things right first.'],
+    ['Children', 'GageQuery is intended for learners aged 16 and over. If you are younger, ask a parent or guardian before allowing the optional tools. The course works fully without them.'],
+    ['Changes to this notice', 'If we change what the optional tools collect, we will update this page and ask for your choice again. Your choice is also asked again after 12 months.']
+  ];
+  S1.forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
+  return p;
+}
 
 /* ================================================================ engine (worker with timeout, main-thread fallback) */
 var Engine = (function () {
@@ -654,6 +718,7 @@ function paintRail() {
   rail.appendChild(link('playground', 'Playground'));
   rail.appendChild(link('progress', 'My progress'));
   rail.appendChild(link('about', 'How it works'));
+  rail.appendChild(link('privacy', 'Privacy'));
   markRail();
 }
 function markRail() {
@@ -1285,11 +1350,10 @@ function viewProgress() {
   var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; S.days = {}; S.reviewed = {}; save(); toast('Progress erased.'); route(true); } });
   p.appendChild(h('div', { class: 'actions' }, downloadBtn, uploadBtn, fileInput));
   p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Copy and paste instead' }), area, h('div', { class: 'actions' }, exportBtn, importBtn)));
-  if (GA.available()) {
-    var gaOn = GA.on();
-    p.appendChild(h('h2', { text: 'Analytics cookies' }));
-    p.appendChild(h('p', { class: 'muted', text: gaOn ? 'Google Analytics is on. It helps show which lessons work and where learners get stuck. It never receives your SQL, your name or your progress.' : 'Google Analytics is off. Nothing is sent to Google. Turning it on helps show which lessons work and where learners get stuck.' }));
-    p.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', text: gaOn ? 'Turn off Google Analytics' : 'Allow Google Analytics', onclick: function () { GA.set(!gaOn); toast(gaOn ? 'Google Analytics is off and its cookies were removed.' : 'Google Analytics is on. Thank you.'); route(true); } })));
+  if (Consent.relevant()) {
+    p.appendChild(h('h2', { text: 'Privacy choices' }));
+    p.appendChild(h('p', { class: 'muted', html: 'Optional visit counting and Google Analytics run only if you allow them. <a href="#privacy">Read the privacy notice</a>.' }));
+    p.appendChild(Consent.choices(function () { toast('Your choices are saved.'); route(true); }));
   }
   p.appendChild(h('div', { class: 'actions' }, clearBtn));
   return p;
@@ -1330,8 +1394,7 @@ function viewAbout() {
    ['Feedback that names the mistake', 'When an answer is wrong, the checker lists what already matches (columns, row count, each column’s values, order) and points at the most likely cause, such as a missing GROUP BY, a JOIN without ON, or an INNER JOIN that should be a LEFT JOIN.'],
    ['XP, levels, streaks and badges', 'Easy exercises earn 50 XP, Medium 100 and Hard 200, or half if you used the solution. Days you run or check a query count towards your streak. Everything is worked out from the progress saved in this browser.'],
    ['Practice arena', 'The arena brings back exercises you have not solved, needed the solution or hints for, or solved more than a week ago. A mixed challenge gives you an exercise you know on a dataset you have not used for it.'],
-   ['Privacy', 'The public site counts how many people visit and which modules they open, using GoatCounter, a privacy-friendly counter. It sets no cookies and never sees your name, your SQL or your progress, which stay in your browser. To tell new learners from returning ones, your browser keeps the date of your last visit; it is not an ID and is never sent. Everything is switched off if your browser sends Do Not Track.'],
-   ['Google Analytics (optional)', 'If you click Allow, Google Analytics also records which pages you open, the exercises you solve and modules you complete, with Google cookies, so we can see where learners get stuck. Advertising features are off. If you click No thanks, Google\u2019s code never loads. You can change your choice at any time on My progress.'],
+   ['Privacy', 'Your progress stays in your browser and is never sent anywhere. Optional visit counting (GoatCounter, no cookies) and Google Analytics (cookies) run only if you allow them, and you can change your choice at any time. The full privacy notice is under Privacy in the menu.'],
    ['Reset', 'Reset code puts the starter back. Reset data restores the original tables if you changed them with INSERT, UPDATE or DELETE. Both can be undone for 10 seconds.'],
    ['Differences from a MySQL server', 'Integer division and some date functions behave differently between databases, so the model answers multiply by 100.0 when they need decimals. Error messages and EXPLAIN output are worded differently from MySQL\u2019s. Stored procedures and triggers will be shown as reference cards in later modules.']].forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
   p.appendChild(h('h2', { text: 'Keyboard shortcuts' }));
@@ -1345,7 +1408,7 @@ function viewAbout() {
 function openPalette() {
   var dlg = $('#palette'); dlg.hidden = false;
   var input = $('#pal-input'), list = $('#pal-list'); input.value = ''; render(); input.focus();
-  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['How it works', 'about']];
+  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['Privacy', 'privacy'], ['How it works', 'about']];
   MODS.forEach(function (m) { items.push(['Module ' + m.number + ': ' + m.title, m.id]); m.exercises.forEach(function (e) { items.push(['M' + m.number + ' Exercise ' + e.n + ' (' + e.level + '): ' + e.v[curDs()].task.slice(0, 70), e.id]); }); });
   ORDER.forEach(function (d) { items.push(['Use dataset: ' + dsLabel(d), 'ds:' + d]); });
   var sel = 0, shown = [];
@@ -1380,6 +1443,7 @@ function route(keepScroll) {
   else if (r === 'datasets') pg = viewDatasets();
   else if (r === 'progress') pg = viewProgress();
   else if (r === 'practice') pg = viewPractice();
+  else if (r === 'privacy') pg = viewPrivacy();
   else if (r === 'about') pg = viewAbout();
   else if ((m = /^(m\d\d)(?:-(concepts|examples|exercises))?$/.exec(r)) && MOD_BY_ID[m[1]]) pg = viewModule(MOD_BY_ID[m[1]], m[2]);
   else if (EX_BY_ID[r]) pg = viewExercise(EX_BY_ID[r]);
@@ -1389,7 +1453,7 @@ function route(keepScroll) {
   closeRail();
   window.scrollTo(0, keepScroll === true ? y : 0);
   var h1 = pg.querySelector('h1'); document.title = (h1 ? h1.textContent + ' \u00b7 ' : '') + 'GageQuery';
-  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about)$/.test(r) ? r : 'home';
+  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about|privacy)$/.test(r) ? r : 'home';
   Analytics.page(counted, document.title);
   GA.page(counted, document.title);
 }
@@ -1430,6 +1494,7 @@ function boot() {
   initTheme();
   Analytics.init();
   GA.init();
+  Consent.init();
   $('#pal-kbd').textContent = MOD_KEY + ' K';
   document.addEventListener('click', function (ev) {
     var t = ev.target; while (t && t !== document && !(t.tagName === 'A' && (t.getAttribute('href') || '').charAt(0) === '#')) t = t.parentNode;
