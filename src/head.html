@@ -388,6 +388,20 @@ a.mod-card:hover,.ex-card:hover,.ds-card:hover{box-shadow:var(--shadow-2);transf
 .choice label{display:flex;flex-direction:column;gap:1px;font-size:15px;cursor:pointer}
 .choice label span{color:var(--muted);font-size:14px}
 .consent .choices{max-height:60vh;overflow:auto}
+.rate{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--s3) var(--s4);margin-top:var(--s3)}
+.rate-q{margin:0 0 4px}
+.stars{display:flex;gap:4px}
+.star{font-size:28px;line-height:1;background:none;border:0;padding:2px 4px;cursor:pointer;color:var(--line);border-radius:var(--r-sm)}
+.star:hover:not([disabled]),.star:focus-visible{color:var(--medium)}
+.star.on{color:var(--medium)}
+.star[disabled]{cursor:default}
+.rate-after .chips{margin:6px 0 4px}
+.rate .chip{font-family:var(--sans);font-size:14.5px}
+.rate-note{margin:6px 0 0}
+.fb-form{display:flex;flex-direction:column;gap:6px;max-width:560px}
+.fb-form select{font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;max-width:100%}
+.fb-form .lbl{margin-top:6px}
+.task .report{margin:12px 0 0}
 .tab .step{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-2);color:var(--muted);font-size:12px;margin-right:8px}
 .tab[aria-selected="true"] .step{background:var(--accent);color:var(--accent-ink)}
 .ex-card .ex-top .xp-tag{margin-left:2px}
