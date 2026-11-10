@@ -574,3 +574,56 @@ def test_privacy_notice_names_the_owner_contact_and_rights(app):
     for needed in ('gagexplorerinc@gmail.com', 'GageQuery', 'Nigeria Data Protection Commission', 'GDPR', 'withdraw consent', '16 and over', 'Google', 'GoatCounter', 'never collect'):
         assert needed.lower() in text.lower(), needed
     assert app.real_errors() == []
+
+
+M00_ALMOST = ', '.join("'m00-e0%d': {state: 'solved', ds: 'sales', at: Date.now()}" % i for i in (1, 2))
+M00_DONE = ', '.join("'m00-e0%d': {state: 'solved', ds: 'sales', at: Date.now()}" % i for i in (1, 2, 3))
+
+
+def test_completing_a_module_asks_for_a_rating_sent_only_when_clicked(browser, base_url, solution):
+    # counting is NOT consented: a rating still goes, because the learner sends it, but nothing else does
+    ctx, page, hits = counted_session(browser, base_url, extra_init=SEEDED % M00_ALMOST, consent=None)
+    page.select_option('#ds-select', 'sales'); page.wait_for_timeout(300)
+    page.evaluate("location.hash = 'm00-e03'"); page.wait_for_selector('.task')
+    page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", solution('m00', 3, 'sales'))
+    page.click(".action-bar button:has-text('Check answer')"); page.wait_for_selector('.fb.ok', timeout=15000)
+    assert 'How was Module 0' in page.inner_text('.fb.ok .rate')
+    assert hits == [], 'nothing is sent before the learner rates'
+    page.click(".fb.ok .rate button[aria-label='4 stars']"); page.wait_for_timeout(300)
+    page.click(".fb.ok .rate button:has-text('More examples')"); page.wait_for_timeout(300)
+    assert [h['p'] for h in hits] == ['rating/m00/4', 'help/m00/more-examples'] and all(h.get('e') == 'true' for h in hits)
+    saved = page.evaluate("JSON.parse(localStorage.getItem('gagequery-ratings'))")
+    assert saved['m00']['stars'] == 4 and saved['m00']['help'] == 'more-examples'
+    page.evaluate("location.hash = 'm00'"); page.wait_for_selector('.banner')
+    assert page.query_selector('.rate') is None, 'a rated module is not asked again'
+    ctx.close()
+
+
+def test_rating_without_a_counter_is_only_saved_on_the_device(app_factory):
+    app = app_factory('m00', init_script=SEEDED % M00_DONE)
+    seen = []
+    app.page.on('request', lambda r: seen.append(r.url))
+    app.page.wait_for_selector('.rate')
+    app.page.click(".rate button[aria-label='5 stars']"); app.page.wait_for_timeout(300)
+    assert app.page.evaluate("JSON.parse(localStorage.getItem('gagequery-ratings')).m00.stars") == 5
+    assert [u for u in seen if not u.startswith(('http://127.0.0.1', 'data:', 'blob:'))] == []
+    assert app.real_errors() == []
+
+
+def test_feedback_page_builds_an_email_about_the_right_exercise(app):
+    from urllib.parse import unquote
+    assert app.page.locator('#rail a[data-route=feedback]').count() == 1
+    app.open_exercise('m03-e02', 'sales')
+    app.page.click(".task .report a:has-text('Tell us')")
+    app.page.wait_for_selector('#fb-mail')
+    href = app.page.get_attribute('#fb-mail', 'href')
+    assert href.startswith('mailto:gagexplorerinc@gmail.com?subject=')
+    text = unquote(href)
+    assert 'GageQuery feedback: Module 3, Exercise 2' in text and 'm03-e02' in text and 'What happened instead?' in text
+    assert app.page.eval_on_selector('#fb-kind', 'e => e.value') == 'problem'
+    app.page.select_option('#fb-about', '')
+    app.page.select_option('#fb-kind', 'idea')
+    text = unquote(app.page.get_attribute('#fb-mail', 'href'))
+    assert 'GageQuery feedback: General' in text and 'What would you like to tell us?' in text
+    assert 'gagexplorerinc@gmail.com' in app.page.inner_text('main')
+    assert app.real_errors() == []

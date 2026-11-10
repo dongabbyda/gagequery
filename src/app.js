@@ -143,8 +143,8 @@ var Analytics = (function () {
     var m = document.querySelector('meta[name="analytics-endpoint"]'), u = m && m.getAttribute('content');
     if (/^https:\/\/[a-z0-9-]+\.goatcounter\.com$/.test(u || '')) endpoint = u;
   }
-  function send(path, title, isEvent) {
-    if (!active) return;
+  function send(path, title, isEvent, force) {
+    if (!endpoint || (!active && !force)) return;   // force: a rating the learner chose to send
     var q = 'p=' + encodeURIComponent(path) + '&t=' + encodeURIComponent(title || '') + (isEvent ? '&e=true' : '') + '&s=' + [screen.width, screen.height, window.devicePixelRatio || 1].join(',');
     if (!sentRef && !isEvent) {
       sentRef = true;
@@ -169,7 +169,8 @@ var Analytics = (function () {
     enable: function () { if (!endpoint || active) return; active = true; countVisit(); if (last) pageNow(last[0], last[1]); },
     disable: function () { active = false; try { localStorage.removeItem(MARK); } catch (e) {} },
     page: function (route, title) { if (last && last[0] === route) return; last = [route, title]; if (active) pageNow(route, title); },
-    event: function (name) { send(name, name, true); }
+    event: function (name) { send(name, name, true); },
+    feedback: function (name) { send(name, name, true, true); }
   };
 })();
 
@@ -302,14 +303,110 @@ function viewPrivacy() {
     ['Stored on your device (necessary)', 'Your progress, drafts, hints, practice days, review times, chosen dataset, theme and these privacy choices are saved in your browser’s local storage. They are not cookies, they are never sent to us or anyone else, and the course cannot work without them. You can download, import or erase them on My progress, or by clearing this site’s data in your browser.'],
     ['Optional: visit counting (GoatCounter)', 'If you allow it, your browser sends GoatCounter (goatcounter.com) the page you open, its title, your screen size, the site you came from, and milestones such as "solved/m03-e02" or "module-complete/m04". GoatCounter uses your IP address and browser type briefly to avoid counting the same visit twice and, according to GoatCounter, never stores them. No cookies are used. We also save the date of your last visit on your device to tell new visitors from returning ones. Purpose: knowing how many people use the course and which lessons they reach. Legal basis: your consent.'],
     ['Optional: Google Analytics', 'If you allow it, Google Analytics records the pages you open, the exercises you solve, the modules you complete, your device and browser type and your approximate location, using Google cookies (_ga and _ga_*) for up to 13 months. Advertising features, Google signals and ad personalisation are off. Google stores the event data for 2 months. Purpose: understanding how learners move through the course and where they get stuck. Legal basis: your consent. The provider is Google (Google Ireland Limited for people in the EEA and UK, and Google LLC in the United States).'],
+    ['Ratings and feedback', 'When you complete a module we ask for a star rating and, optionally, what would help most. Only if you click, the stars and your choice (for example "rating/m04/4") are sent to GoatCounter as an anonymous count, with no name, text or progress; this is separate from the optional tools above because you send it yourself. We remember on your device which modules you rated, so we do not ask twice. If you email us from the Feedback page, we receive your email address and message; we use them only to reply and to improve the course, keep them no longer than needed, and delete them on request.'],
     ['International transfers', 'Google may process data in the United States. Google LLC is certified under the EU-US Data Privacy Framework and offers standard contractual clauses. Under the NDPA, transfers outside Nigeria rely on your consent and these safeguards. If you prefer, choose Reject all and nothing is sent.'],
-    ['What we never collect', 'Your name, email, phone number, the SQL you write, your answers, or your progress. We do not sell data, show ads or share data with anyone apart from the two tools above.'],
+    ['What we never collect', 'Your name, email or phone number (unless you choose to email us), the SQL you write, your answers, or your progress. We do not sell data, show ads or share data with anyone apart from the two tools above.'],
     ['Your rights', 'Under the GDPR and the Nigeria Data Protection Act you can ask to access, correct or delete personal data, object to or restrict its use, and withdraw consent at any time. Withdrawing is as easy as giving: open Privacy in the menu, change the switches and save. Switching a tool off stops it at once and deletes what it stored on your device. Because we hold no names or emails, we usually cannot link analytics records to you; email ' + PRIVACY.contact + ' and we will help as far as we can.'],
     ['Complaints', 'You can complain to the Nigeria Data Protection Commission (ndpc.gov.ng), to the data protection authority in your EU or EEA country, or in the UK to the Information Commissioner’s Office (ico.org.uk). We would appreciate the chance to put things right first.'],
     ['Children', 'GageQuery is intended for learners aged 16 and over. If you are younger, ask a parent or guardian before allowing the optional tools. The course works fully without them.'],
     ['Changes to this notice', 'If we change what the optional tools collect, we will update this page and ask for your choice again. Your choice is also asked again after 12 months.']
   ];
   S1.forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
+  return p;
+}
+
+/* ================================================================ learner feedback
+   Star ratings appear once, when a module is complete. A rating and the optional "what would help" choice are sent only
+   when the learner clicks, as anonymous GoatCounter events (rating/m04/4, help/m04/more-examples): no name, no text, no
+   progress. Ratings are kept on the device so we do not ask twice. Longer comments go by email from the Feedback page. */
+var RATINGS_KEY = 'gagequery-ratings';
+var HELP_OPTIONS = [['more-examples', 'More examples'], ['clearer-explanations', 'Clearer explanations'], ['easier-exercises', 'Easier exercises'],
+  ['harder-exercises', 'Harder exercises'], ['a-short-video', 'A short video'], ['nothing', 'Nothing, it was great']];
+var feedbackAbout = null;   // the module or exercise the learner was on when they chose to send feedback
+
+function ratings() { try { var r = JSON.parse(localStorage.getItem(RATINGS_KEY) || '{}'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } }
+function saveRating(modId, patch) {
+  var r = ratings(), cur = r[modId] || {};
+  for (var k in patch) cur[k] = patch[k];
+  cur.at = Date.now(); r[modId] = cur;
+  try { localStorage.setItem(RATINGS_KEY, JSON.stringify(r)); } catch (e) {}
+}
+
+function ratingCard(m) {
+  var card = h('section', { class: 'rate', 'aria-label': 'Rate ' + modName(m) });
+  card.appendChild(h('p', { class: 'rate-q' }, h('b', { text: 'How was ' + modName(m) + ': ' + m.title + '?' })));
+  var stars = h('div', { class: 'stars', role: 'radiogroup', 'aria-label': 'Your rating, 1 to 5 stars' });
+  var after = h('div', { class: 'rate-after' });
+  function choose(n) {
+    Array.prototype.forEach.call(stars.children, function (b, i) { b.classList.toggle('on', i < n); b.setAttribute('aria-checked', i + 1 === n ? 'true' : 'false'); b.disabled = true; });
+    saveRating(m.id, { stars: n });
+    Analytics.feedback('rating/' + m.id + '/' + n);
+    GA.event('module_rating', { module_id: m.id, stars: n });
+    after.innerHTML = '';
+    after.appendChild(h('p', { class: 'muted sm', text: 'Thank you! What would help most? (optional)' }));
+    var chips = h('div', { class: 'chips' });
+    HELP_OPTIONS.forEach(function (o) {
+      chips.appendChild(h('button', { class: 'chip', type: 'button', text: o[1], onclick: function () {
+        saveRating(m.id, { help: o[0] });
+        Analytics.feedback('help/' + m.id + '/' + o[0]);
+        GA.event('module_help', { module_id: m.id, help: o[0] });
+        after.innerHTML = '';
+        after.appendChild(h('p', { class: 'muted sm' }, h('span', { text: 'Thanks, that helps us improve ' + modName(m) + '. Want to say more? ' }),
+          h('a', { href: '#feedback', text: 'Send us a message', onclick: function () { feedbackAbout = { mod: m }; } })));
+      } }));
+    });
+    after.appendChild(chips);
+  }
+  for (var i = 1; i <= 5; i++) (function (n) {
+    stars.appendChild(h('button', { class: 'star', type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': n + (n === 1 ? ' star' : ' stars'), title: n + (n === 1 ? ' star' : ' stars'), text: '★', onclick: function () { choose(n); } }));
+  })(i);
+  card.appendChild(stars);
+  card.appendChild(after);
+  card.appendChild(h('p', { class: 'muted sm rate-note', text: 'Sent anonymously: only the stars and your choice, never your name or progress.' }));
+  return card;
+}
+function wantsRating(m) { return modComplete(m) && !ratings()[m.id]; }
+
+function feedbackMail(about, kind) {
+  var label = about && about.ex ? modName(about.ex.mod) + ', ' + exName(about.ex) : about && about.mod ? modName(about.mod) + ': ' + about.mod.title : 'General';
+  var subject = 'GageQuery feedback: ' + label;
+  var body = (kind === 'problem'
+    ? 'What were you trying to do?\n\n\nWhat happened instead?\n\n\n'
+    : 'What would you like to tell us?\n\n\n') +
+    '--\nAbout: ' + label + (about && about.ex ? ' (' + about.ex.id + ')' : '') + '\nDataset: ' + DSETS[curDs()].name +
+    '\n(You can delete these lines. Please do not include passwords or personal details.)';
+  return 'mailto:' + PRIVACY.contact + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+}
+
+function viewFeedback() {
+  var p = page('prose');
+  p.appendChild(h('div', { class: 'eyebrow', text: 'Feedback' }));
+  p.appendChild(h('h1', { text: 'Tell us what you think' }));
+  p.appendChild(h('p', { class: 'lede', text: 'Found a mistake, got stuck, or have an idea for a lesson? We read every message, and it shapes what we fix and build next.' }));
+  var about = feedbackAbout; feedbackAbout = null;
+  var sel = h('select', { id: 'fb-about', 'aria-label': 'What is your message about?' });
+  sel.appendChild(h('option', { value: '', text: 'General feedback' }));
+  if (about && about.ex) sel.appendChild(h('option', { value: 'ex:' + about.ex.id, text: modName(about.ex.mod) + ', ' + exName(about.ex), selected: true }));
+  MODS.forEach(function (m) { sel.appendChild(h('option', { value: 'mod:' + m.id, text: modName(m) + ': ' + m.title, selected: !!(about && !about.ex && about.mod === m) })); });
+  var kind = h('select', { id: 'fb-kind', 'aria-label': 'Kind of message' },
+    h('option', { value: 'idea', text: 'An idea or comment' }), h('option', { value: 'problem', text: 'Something is wrong or confusing', selected: !!(about && about.ex) }));
+  var mail = h('a', { class: 'btn primary', id: 'fb-mail', text: 'Write an email' });
+  function current() { var v = sel.value; return v.indexOf('ex:') === 0 ? { ex: EX_BY_ID[v.slice(3)] } : v.indexOf('mod:') === 0 ? { mod: MOD_BY_ID[v.slice(4)] } : null; }
+  function refresh() { mail.setAttribute('href', feedbackMail(current(), kind.value)); }
+  sel.addEventListener('change', refresh); kind.addEventListener('change', refresh); refresh();
+  var copy = h('button', { class: 'btn', type: 'button', text: 'Copy email address', onclick: function () { copyText(PRIVACY.contact, copy); } });
+  p.appendChild(h('div', { class: 'panel fb-form' },
+    h('label', { for: 'fb-about', class: 'lbl', text: 'What is it about?' }), sel,
+    h('label', { for: 'fb-kind', class: 'lbl', text: 'What kind of message?' }), kind,
+    h('div', { class: 'actions' }, mail, copy),
+    h('p', { class: 'muted sm', html: 'This opens your email app with a short template. No email app? Write to <b>' + esc(PRIVACY.contact) + '</b> from any email service.' })));
+  p.appendChild(h('h2', { text: 'Quick ratings' }));
+  p.appendChild(h('p', { text: 'When you complete a module, we ask for a star rating and what would help most. It takes one tap and is sent anonymously. You can also rate any module you have completed here:' }));
+  var done = MODS.filter(function (m) { return modComplete(m); });
+  if (!done.length) p.appendChild(h('p', { class: 'muted', text: 'Complete a module to rate it.' }));
+  done.forEach(function (m) { var r = ratings()[m.id]; p.appendChild(r ? h('p', { class: 'muted', text: modName(m) + ': you rated it ' + '★'.repeat(r.stars || 0) + '☆'.repeat(5 - (r.stars || 0)) + '. Thank you.' }) : ratingCard(m)); });
+  p.appendChild(h('h2', { text: 'What happens to your message' }));
+  p.appendChild(h('p', { text: 'Emails go to the GageQuery inbox. We use them only to reply and to improve the course, never for marketing, and we delete them on request. See the privacy notice for details.' }));
   return p;
 }
 
@@ -718,6 +815,7 @@ function paintRail() {
   rail.appendChild(link('playground', 'Playground'));
   rail.appendChild(link('progress', 'My progress'));
   rail.appendChild(link('about', 'How it works'));
+  rail.appendChild(link('feedback', 'Feedback'));
   rail.appendChild(link('privacy', 'Privacy'));
   markRail();
 }
@@ -862,6 +960,7 @@ function viewModule(m, tab) {
       h('span', { text: todo ? 'The Hard ' + (m.capstone ? 'task' : 'exercise') + ' is optional, and earns 200 XP.' : 'Every ' + (m.capstone ? 'task' : 'exercise') + ' solved.' }), h('span', { class: 'sp' }),
       todo ? h('a', { class: 'btn sm', href: '#' + todo.id, text: 'Try ' + exName(todo).toLowerCase() }) : null,
       nextMod ? h('a', { class: 'btn primary sm', href: '#' + nextMod.id, text: 'Next: ' + modName(nextMod) + ' →' }) : null));
+    if (wantsRating(m)) p.appendChild(ratingCard(m));
   } else {
     p.appendChild(h('div', { class: 'mod-progress' }, statusChip(m),
       h('span', { class: 'bar', role: 'progressbar', 'aria-label': modName(m) + ' progress', 'aria-valuemin': '0', 'aria-valuemax': String(m.exercises.length), 'aria-valuenow': String(k) }, h('i', { style: 'width:' + (100 * k / m.exercises.length) + '%' })),
@@ -976,6 +1075,7 @@ function viewExercise(ex) {
   nav.appendChild(h('span', { class: 'sp' }));
   if (next) nav.appendChild(h('a', { class: 'btn', href: '#' + next.id, text: exWord + next.n + ' \u2192' }));
   else if (nextMod) nav.appendChild(h('a', { class: 'btn', href: '#' + nextMod.id, text: (nextMod.capstone ? 'Capstone' : 'Module ' + nextMod.number) + ' \u2192' }));
+  task.appendChild(h('p', { class: 'muted sm report' }, h('span', { text: 'Something wrong or confusing here? ' }), h('a', { href: '#feedback', text: 'Tell us', onclick: function () { feedbackAbout = { ex: ex }; } })));
   task.appendChild(nav);
   /* workspace panel */
   var work = h('section', { class: 'work', 'aria-label': 'Workspace' });
@@ -1055,7 +1155,10 @@ function viewExercise(ex) {
         if (cmp.namesDiffer && !v.verify) box.appendChild(h('p', { text: 'Your column names differ from the suggested ones (' + v.cols.join(', ') + '). The values are right; matching names makes reports easier to share.' }));
         box.appendChild(h('p', { html: md(ex.explain) }));
         if (st === 'helped') box.appendChild(h('p', { class: 'muted sm', text: 'Marked as solved with help because the solution was shown. It earns half the XP.' }));
-        if (!modWasComplete && modComplete(m)) box.appendChild(h('p', { class: 'done-line', text: '\u2713 That completes ' + modName(m) + ': ' + m.title + '.' }));
+        if (!modWasComplete && modComplete(m)) {
+          box.appendChild(h('p', { class: 'done-line', text: '\u2713 That completes ' + modName(m) + ': ' + m.title + '.' }));
+          if (wantsRating(m)) box.appendChild(ratingCard(m));
+        }
         var nx = next || (nextMod && nextMod.exercises[0]);
         if (nx) box.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + (next ? next.id : nextMod.id), text: next ?'Next: ' + exName(next).toLowerCase() + ' \u2192' : 'Next: ' + modName(nextMod) + ' \u2192' })));
         else box.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#progress', text: 'See your progress' })));
@@ -1408,7 +1511,7 @@ function viewAbout() {
 function openPalette() {
   var dlg = $('#palette'); dlg.hidden = false;
   var input = $('#pal-input'), list = $('#pal-list'); input.value = ''; render(); input.focus();
-  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['Privacy', 'privacy'], ['How it works', 'about']];
+  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['Feedback', 'feedback'], ['Privacy', 'privacy'], ['How it works', 'about']];
   MODS.forEach(function (m) { items.push(['Module ' + m.number + ': ' + m.title, m.id]); m.exercises.forEach(function (e) { items.push(['M' + m.number + ' Exercise ' + e.n + ' (' + e.level + '): ' + e.v[curDs()].task.slice(0, 70), e.id]); }); });
   ORDER.forEach(function (d) { items.push(['Use dataset: ' + dsLabel(d), 'ds:' + d]); });
   var sel = 0, shown = [];
@@ -1444,6 +1547,7 @@ function route(keepScroll) {
   else if (r === 'progress') pg = viewProgress();
   else if (r === 'practice') pg = viewPractice();
   else if (r === 'privacy') pg = viewPrivacy();
+  else if (r === 'feedback') pg = viewFeedback();
   else if (r === 'about') pg = viewAbout();
   else if ((m = /^(m\d\d)(?:-(concepts|examples|exercises))?$/.exec(r)) && MOD_BY_ID[m[1]]) pg = viewModule(MOD_BY_ID[m[1]], m[2]);
   else if (EX_BY_ID[r]) pg = viewExercise(EX_BY_ID[r]);
@@ -1453,7 +1557,7 @@ function route(keepScroll) {
   closeRail();
   window.scrollTo(0, keepScroll === true ? y : 0);
   var h1 = pg.querySelector('h1'); document.title = (h1 ? h1.textContent + ' \u00b7 ' : '') + 'GageQuery';
-  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about|privacy)$/.test(r) ? r : 'home';
+  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about|privacy|feedback)$/.test(r) ? r : 'home';
   Analytics.page(counted, document.title);
   GA.page(counted, document.title);
 }
