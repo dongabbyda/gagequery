@@ -255,7 +255,10 @@ ADD_COUNTER = ("document.addEventListener('readystatechange', () => { if (docume
                " const m = document.createElement('meta'); m.name = 'analytics-endpoint'; m.content = '%s'; document.head.appendChild(m); } });" % COUNTER)
 
 
-def counted_session(browser, base_url, extra_init=None, with_counter=True):
+CONSENT_COUNTING = ("localStorage.setItem('gagequery-consent', JSON.stringify({v: 1, at: Date.now(), counting: true, ga: false}));")
+
+
+def counted_session(browser, base_url, extra_init=None, with_counter=True, consent=CONSENT_COUNTING):
     """A page whose counter requests are captured and answered locally, so tests never reach the real GoatCounter."""
     from urllib.parse import urlparse, parse_qs
     ctx = browser.new_context(viewport={'width': 1400, 'height': 900})
@@ -268,6 +271,8 @@ def counted_session(browser, base_url, extra_init=None, with_counter=True):
     ctx.route(COUNTER + '/**', answer)
     if extra_init:
         ctx.add_init_script(extra_init)
+    if consent:
+        ctx.add_init_script(consent)
     if with_counter:
         ctx.add_init_script(ADD_COUNTER)
     page = ctx.new_page()
@@ -378,3 +383,194 @@ def test_engine_and_checker_work_in_firefox_too(firefox, base_url):
     assert 'ok' in page.wait_for_selector('.fb', timeout=20000).get_attribute('class').split()
     assert errors == []
     page.close()
+
+
+
+GA_ID = 'G-CF1GPT184M'
+ADD_GA = ("document.addEventListener('readystatechange', () => { if (document.readyState === 'interactive' && !document.querySelector('meta[name=ga-measurement-id]')) {"
+          " const m = document.createElement('meta'); m.name = 'ga-measurement-id'; m.content = '%s'; document.head.appendChild(m); } });" % GA_ID)
+
+
+def ga_session(browser, base_url, extra_init=None, viewport=(1400, 900)):
+    """A page with Google Analytics configured. Every request to Google is answered locally and recorded."""
+    ctx = browser.new_context(viewport={'width': viewport[0], 'height': viewport[1]})
+    google = []
+
+    def answer(route):
+        google.append(route.request.url)
+        if 'googletagmanager.com/gtag/js' in route.request.url:
+            route.fulfill(status=200, content_type='text/javascript', body='window.__gtagLoaded = true;')
+        else:
+            route.fulfill(status=204, body='')
+    for pattern in ('https://*.googletagmanager.com/**', 'https://*.google-analytics.com/**', 'https://*.analytics.google.com/**'):
+        ctx.route(pattern, answer)
+    if extra_init:
+        ctx.add_init_script(extra_init)
+    ctx.add_init_script(ADD_GA)
+    page = ctx.new_page()
+    page.goto(base_url + '#home')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    page.wait_for_timeout(300)
+    return ctx, page, google
+
+
+def wait_until(page, expr, timeout=10):
+    """Poll a condition from Python: the site's CSP (rightly) blocks the eval that wait_for_function uses."""
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        if page.evaluate('() => ' + expr):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError('timed out waiting for ' + expr)
+
+
+def ga_calls(page):
+    return page.evaluate("(window.dataLayer || []).map(a => Array.from(a).map(x => x instanceof Date ? 'DATE' : x))")
+
+
+def test_google_analytics_waits_for_consent_and_no_thanks_means_nothing_loads(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url)
+    assert page.is_visible('#consent') and 'Google Analytics' in page.inner_text('#consent')
+    assert google == [] and page.evaluate('typeof window.gtag') == 'undefined', 'nothing from Google before a choice'
+    page.click("#consent button:has-text('Reject all')")
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert page.query_selector('#consent') is None and google == [] and page.evaluate('typeof window.gtag') == 'undefined'
+    page.reload(); page.wait_for_selector('#engine.ready', state='attached', timeout=60000); page.wait_for_timeout(300)
+    assert page.query_selector('#consent') is None and google == [], 'the choice is remembered'
+    rec = page.evaluate("JSON.parse(localStorage.getItem('gagequery-consent'))")
+    assert rec['ga'] is False and rec['counting'] is False and rec['v'] == 1
+    assert not [c for c in ctx.cookies() if c['name'].startswith('_ga')]
+    ctx.close()
+
+
+def test_google_analytics_after_allow_reports_routes_and_milestones_without_sql(browser, base_url, solution):
+    ctx, page, google = ga_session(browser, base_url)
+    page.click("#consent button:has-text('Accept all')")
+    wait_until(page, 'window.__gtagLoaded === true')
+    assert any('gtag/js?id=' + GA_ID in u for u in google)
+    calls = ga_calls(page)
+    assert ['consent', 'default', {'analytics_storage': 'granted', 'ad_storage': 'denied', 'ad_user_data': 'denied', 'ad_personalization': 'denied'}] in calls
+    assert ['config', GA_ID, {'send_page_view': False, 'cookie_expires': 34128000, 'allow_google_signals': False, 'allow_ad_personalization_signals': False}] in calls
+    page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(300)
+    page.select_option('#ds-select', 'sales'); page.wait_for_timeout(300)
+    page.evaluate("location.hash = 'm00-e01'"); page.wait_for_selector('.task')
+    page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", solution('m00', 1, 'sales'))
+    page.click(".action-bar button:has-text('Check answer')"); page.wait_for_selector('.fb.ok', timeout=15000); page.wait_for_timeout(300)
+    calls = ga_calls(page)
+    views = [c[2]['page_location'].split('/')[-1] for c in calls if c[:2] == ['event', 'page_view']]
+    assert views[:3] == ['', 'm04', 'm00-e01'], views
+    assert ['event', 'exercise_solved', {'exercise_id': 'm00-e01', 'module_id': 'm00', 'level': 'Easy', 'help': 'none'}] in calls
+    assert 'select' not in str(calls).lower(), 'no SQL may reach Google'
+    ctx.close()
+
+
+def test_turning_google_analytics_off_on_my_progress_disables_it_and_removes_cookies(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url)
+    page.click("#consent button:has-text('Accept all')")
+    wait_until(page, 'window.__gtagLoaded === true')
+    page.evaluate("document.cookie = '_ga=GA1.1.123.456; path=/'; document.cookie = '_ga_TEST=GS1.1.1; path=/'")
+    page.evaluate("location.hash = 'progress'"); page.wait_for_selector('#ch-ga:checked')
+    page.uncheck('#ch-ga'); page.click("main button:has-text('Save my choices')")
+    assert page.evaluate("window['ga-disable-%s']" % GA_ID) is True
+    assert '_ga' not in page.evaluate('document.cookie')
+    assert page.evaluate("JSON.parse(localStorage.getItem('gagequery-consent')).ga") is False
+    page.wait_for_selector('#ch-ga:not(:checked)')
+    ctx.close()
+
+
+def test_no_google_analytics_banner_under_do_not_track_or_without_an_id(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url, extra_init="Object.defineProperty(navigator, 'doNotTrack', {get: () => '1'});")
+    assert page.query_selector('#consent') is None and google == []
+    ctx.close()
+    # the normal test build has no GA_MEASUREMENT_ID, so the app shows no banner and never mentions it on My progress
+    ctx = browser.new_context(); page = ctx.new_page(); page.goto(base_url + '#progress')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    assert page.query_selector('#consent') is None and 'Privacy choices' not in page.inner_text('main')
+    ctx.close()
+
+
+def test_consent_banner_fits_a_phone(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url, viewport=(390, 844))
+    box = page.query_selector('#consent').bounding_box()
+    assert box['x'] >= 0 and box['x'] + box['width'] <= 390 and box['y'] + box['height'] <= 844
+    assert page.evaluate('document.documentElement.scrollWidth') <= 390
+    ctx.close()
+
+
+
+def both_tools_session(browser, base_url, extra_init=None, viewport=(1400, 900)):
+    """GoatCounter and Google Analytics both configured; all of their requests are recorded and answered locally."""
+    ctx = browser.new_context(viewport={'width': viewport[0], 'height': viewport[1]})
+    goat, google = [], []
+    ctx.route(COUNTER + '/**', lambda r: (goat.append(r.request.url), r.fulfill(status=200, content_type='image/gif', body=b'GIF89a\x01\x00\x01\x00\x00\x00\x00;')))
+
+    def g(route):
+        google.append(route.request.url)
+        route.fulfill(status=200, content_type='text/javascript', body='window.__gtagLoaded = true;') if 'gtag/js' in route.request.url else route.fulfill(status=204, body='')
+    for pattern in ('https://*.googletagmanager.com/**', 'https://*.google-analytics.com/**', 'https://*.analytics.google.com/**'):
+        ctx.route(pattern, g)
+    if extra_init:
+        ctx.add_init_script(extra_init)
+    ctx.add_init_script(ADD_COUNTER)
+    ctx.add_init_script(ADD_GA)
+    page = ctx.new_page()
+    page.goto(base_url + '#home')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    page.wait_for_timeout(300)
+    return ctx, page, goat, google
+
+
+def test_nothing_optional_runs_before_a_choice_and_reject_is_as_easy_as_accept(browser, base_url):
+    ctx, page, goat, google = both_tools_session(browser, base_url)
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert goat == [] and google == [], 'no counting and no Google before consent'
+    assert page.evaluate("localStorage.getItem('gagequery-seen')") is None, 'no analytics storage before consent'
+    accept = page.get_attribute("#consent button:has-text('Accept all')", 'class')
+    reject = page.get_attribute("#consent button:has-text('Reject all')", 'class')
+    assert accept == reject, 'Reject all must look exactly as prominent as Accept all'
+    assert 'privacy' in page.get_attribute("#consent a", 'href')
+    ctx.close()
+
+
+def test_choose_starts_with_everything_off_and_allows_one_tool_only(browser, base_url):
+    ctx, page, goat, google = both_tools_session(browser, base_url)
+    page.click("#consent button:has-text('Choose')")
+    assert page.is_checked('#ch-need') and page.is_disabled('#ch-need')
+    assert not page.is_checked('#ch-count') and not page.is_checked('#ch-ga'), 'no pre-ticked boxes'
+    page.check('#ch-count'); page.click("#consent button:has-text('Save my choices')")
+    page.wait_for_timeout(300)
+    assert page.query_selector('#consent') is None
+    assert any('p=visit' in u for u in goat) and google == []
+    rec = page.evaluate("JSON.parse(localStorage.getItem('gagequery-consent'))")
+    assert rec['v'] == 1 and rec['counting'] is True and rec['ga'] is False and isinstance(rec['at'], (int, float))
+    ctx.close()
+
+
+def test_choices_are_asked_again_after_twelve_months_or_a_new_notice(browser, base_url):
+    for stale in ("{v: 1, at: Date.now() - 400 * 864e5, counting: true, ga: true}", "{v: 0, at: Date.now(), counting: true, ga: true}"):
+        ctx, page, goat, google = both_tools_session(browser, base_url, extra_init="localStorage.setItem('gagequery-consent', JSON.stringify(%s));" % stale)
+        assert page.is_visible('#consent'), stale
+        assert goat == [] and google == [], 'an old choice must not keep the tools running'
+        ctx.close()
+
+
+def test_withdrawing_on_the_privacy_page_stops_counting_and_deletes_the_marker(browser, base_url):
+    ctx, page, goat, google = both_tools_session(browser, base_url, extra_init="localStorage.setItem('gagequery-consent', JSON.stringify({v: 1, at: Date.now(), counting: true, ga: false}));")
+    assert page.evaluate("localStorage.getItem('gagequery-seen')") is not None
+    page.evaluate("location.hash = 'privacy'"); page.wait_for_selector('#ch-count:checked')
+    page.uncheck('#ch-count'); page.click("main button:has-text('Save my choices')"); page.wait_for_timeout(300)
+    assert page.evaluate("localStorage.getItem('gagequery-seen')") is None
+    before = len(goat)
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert len(goat) == before, 'no counting after withdrawal'
+    ctx.close()
+
+
+def test_privacy_notice_names_the_owner_contact_and_rights(app):
+    assert app.page.locator('#rail a[data-route=privacy]').count() == 1
+    app.go('privacy'); app.page.wait_for_selector("h1:has-text('Privacy notice')")
+    text = app.page.inner_text('main')
+    for needed in ('gagexplorerinc@gmail.com', 'GageQuery', 'Nigeria Data Protection Commission', 'GDPR', 'withdraw consent', '16 and over', 'Google', 'GoatCounter', 'never collect'):
+        assert needed.lower() in text.lower(), needed
+    assert app.real_errors() == []

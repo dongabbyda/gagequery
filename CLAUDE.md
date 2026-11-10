@@ -62,7 +62,7 @@ npm run data         # regenerate the five generated datasets (only after changi
 6. **Datasets are reproducible.** `datasets/generate.py` is seeded; `tests/test_content.py` regenerates into a temp
    folder and compares byte-for-byte. If you change a generator, run `npm run data`, rebuild, and expect many
    answers to change — re-check row counts and planted teaching cases (see `docs/CONTENT_GUIDE.md`).
-7. **No network at runtime.** Everything is inlined, fonts included (variable Latin subsets from `@fontsource-variable/*`, base64 in `assemble.py`); the page makes no external request, except one optional anonymous visit counter (an image request to GoatCounter, added only when the build gets `GOATCOUNTER_URL`; the Pages workflow sets it, local builds and tests do not). The CSP in
+7. **No network at runtime.** Everything is inlined, fonts included (variable Latin subsets from `@fontsource-variable/*`, base64 in `assemble.py`); the page makes no external request, except one optional anonymous visit counter (an image request to GoatCounter, added only when the build gets `GOATCOUNTER_URL`; the Pages workflow sets it, local builds and tests do not) and opt-in Google Analytics (set by `GA_MEASUREMENT_ID` in the Pages workflow). Both run only after consent (`Consent` in `src/app.js`, notice in `viewPrivacy()`); if you change what they collect, update the notice and bump `PRIVACY.version` so everyone is asked again. The CSP in
    `public/_headers` is what production serves and what the browser tests run under. Do not add `eval`,
    `new Function`, or remote scripts.
 8. **Progress lives in localStorage** under `gagequery-v1` (falls back to the old `querycraft-v1` key). Changing

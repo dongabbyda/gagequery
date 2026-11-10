@@ -51,6 +51,18 @@ def analytics_meta():
     return '<meta name="analytics-endpoint" content="%s">\n' % url
 
 
+def ga_meta():
+    """Optional Google Analytics, loaded only after the learner clicks Allow: set GA_MEASUREMENT_ID (G-...) when building."""
+    ga = os.environ.get('GA_MEASUREMENT_ID', '').strip()
+    if not ga:
+        return ''
+    if not re.fullmatch(r'G-[A-Z0-9]{4,16}', ga):
+        sys.exit('GA_MEASUREMENT_ID must look like G-XXXXXXXXXX')
+    if 'googletagmanager.com' not in read(PUBLIC, '_headers'):
+        sys.exit('Allow Google Analytics in the Content-Security-Policy in public/_headers first.')
+    return '<meta name="ga-measurement-id" content="%s">\n' % ga
+
+
 def csp_meta():
     """The same policy as public/_headers, as a <meta> tag, for hosts (GitHub Pages) that cannot send headers.
     frame-ancestors is not allowed in a meta policy, so it is left out here."""
@@ -99,7 +111,7 @@ def main():
         path = os.path.join(DIST, name)
         shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
     shutil.copytree(PUBLIC, DIST, dirs_exist_ok=True)
-    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() + analytics_meta() +
+    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() + analytics_meta() + ga_meta() +
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
             '<meta name="description" content="GageQuery: learn SQL by doing. From your first query to a capstone business review on six real-world datasets, every answer checked in your browser.">\n'
             '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n'
