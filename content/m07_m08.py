@@ -49,7 +49,7 @@ def mom(ds):
 
 
 M7 = dict(
- id='m07', number=7, phase=2, title='Window Functions I: Ranking', minutes=240,
+ id='m07', phase=2, title='Window Functions I: Ranking', minutes=240,
  objectives=['Add a calculation across rows with OVER() without collapsing them', 'Restart a calculation for each group with PARTITION BY',
              'Choose between ROW_NUMBER, RANK and DENSE_RANK when there are ties', 'Find the top N per group and split rows into buckets with NTILE'],
  concept_weeks=[7],
@@ -154,7 +154,7 @@ M7 = dict(
  ])
 
 M8 = dict(
- id='m08', number=8, phase=2, title='Window Functions II: Time Series', minutes=240,
+ id='m08', phase=2, title='Window Functions II: Time Series', minutes=240,
  objectives=['Look at the previous or next row with LAG and LEAD', 'Build running totals with SUM() OVER',
              'Smooth a series with a moving average and a frame clause', 'Attach the first or last value of a group to every row'],
  concept_weeks=[8],

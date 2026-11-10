@@ -6,17 +6,24 @@ Course content lives in `content/mNN_mNN.py`, two modules per file. Each module 
 
 ```python
 M3 = dict(
-    id='m03', number=3, phase=1, title='Summarising Data: Aggregates, GROUP BY and HAVING', minutes=240,
+    id='m03', phase=1, title='Summarising Data: Aggregates, GROUP BY and HAVING', minutes=240,
     objectives=['Summarise a whole table with COUNT, SUM, AVG, MIN and MAX', ...],
     concept_weeks=[3],            # pulls concept cards from content/concepts.json (week numbers)
     extra_concepts=[...],         # optional: dict(term=..., what=..., whenWhy=...)
     examples=[...],
     exercises=[...],
+    dialects=[...],               # optional "In other databases" cards, see below
 )
 ```
 
-To add a module: create the dict, import it in `scripts/build_content.py`, add it to the module loop, and add its
-short sidebar label/phase in `src/app.js` (`SHORT` / `PHASES`).
+To add a module: give it a new id that has never been used (ids are permanent: progress, analytics and ratings are
+keyed on them), import it in `scripts/build_content.py`, and place it in `COURSE`. Its position there is the number
+learners see, so later modules renumber themselves. Add its short sidebar label in `src/app.js` (`SHORT`, keyed by id).
+Never write a module number into lesson text; name the module instead ("the Joins module").
+
+Dialect cards: `dict(topic=..., mysql=..., postgres=..., sqlserver=..., note=..., pg_setup=...)`. The PostgreSQL
+snippet is run in a real PostgreSQL (PGlite) by `tests/check_dialects.mjs`, after `pg_setup`; keep SQL Server
+snippets to well-documented syntax.
 
 ## Example
 
@@ -46,7 +53,8 @@ dict(level='Medium', concepts=['SUM', 'WHERE', 'GROUP BY'],
                       verify='SELECT ... -- inspects the database after the script; compared instead of the result',
                       verifyMsg='Shown when the verify result differs',
                       forbid=[r'NOT\s+IN\b', 'Message when the pattern appears'],        # one [pattern, message]
-                      require=[[r'\bROLLBACK\b', 'Message when the pattern is missing']]),  # list of [pattern, message]
+                      require=[[r'\bROLLBACK\b', 'Message when the pattern is missing']],  # list of [pattern, message]
+                      verifyText='every row now in promotions'),   # optional plain words shown instead of the verify query
          ...))
 ```
 

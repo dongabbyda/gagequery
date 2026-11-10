@@ -1,7 +1,7 @@
 # Modules 9 and 10.
 
 M9 = dict(
- id='m09', number=9, phase=3, title='Conditional Aggregation, Dates and Strings', minutes=240,
+ id='m09', phase=3, title='Conditional Aggregation, Dates and Strings', minutes=240,
  objectives=['Build pivot-style reports with SUM(CASE ...)', 'Group by year, quarter and month with date functions',
              'Measure time between dates with DATEDIFF', 'Clean and reshape text with SUBSTRING, LOCATE, LEFT, LPAD and REPLACE'],
  concept_weeks=[9],
@@ -193,7 +193,7 @@ def _m10():
 _E1, _E2, _E3, _E4, _E5 = _m10()
 
 M10 = dict(
- id='m10', number=10, phase=3, title='Views, Procedures, Functions and Triggers', minutes=240,
+ id='m10', phase=3, title='Views, Procedures, Functions and Triggers', minutes=240,
  objectives=['Save a query as a view and query it like a table', 'Build views with joins, CASE labels and windows',
              'Read MySQL stored procedures and functions', 'Read a trigger that blocks bad data'],
  concept_weeks=[10],

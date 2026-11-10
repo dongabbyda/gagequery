@@ -619,7 +619,7 @@ def test_feedback_page_builds_an_email_about_the_right_exercise(app):
     href = app.page.get_attribute('#fb-mail', 'href')
     assert href.startswith('mailto:gagexplorerinc@gmail.com?subject=')
     text = unquote(href)
-    assert 'GageQuery feedback: Module 3, Exercise 2' in text and 'm03-e02' in text and 'What happened instead?' in text
+    assert 'GageQuery feedback: Module 4, Exercise 2' in text and 'm03-e02' in text and 'What happened instead?' in text
     assert app.page.eval_on_selector('#fb-kind', 'e => e.value') == 'problem'
     app.page.select_option('#fb-about', '')
     app.page.select_option('#fb-kind', 'idea')
@@ -627,3 +627,54 @@ def test_feedback_page_builds_an_email_about_the_right_exercise(app):
     assert 'GageQuery feedback: General' in text and 'What would you like to tell us?' in text
     assert 'gagexplorerinc@gmail.com' in app.page.inner_text('main')
     assert app.real_errors() == []
+
+
+
+def test_creating_tables_module_sits_second_and_shows_other_databases(app):
+    app.page.wait_for_selector('#rail')
+    rail = app.page.inner_text('#rail')
+    assert rail.index('Getting started') < rail.index('Creating tables') < rail.index('Cleaning up results')
+    app.go('m15'); app.page.wait_for_selector("h1:has-text('Creating and Changing Tables')")
+    assert 'module 2' in app.page.inner_text('.eyebrow').lower()
+    cards = app.page.locator('.concept.dialect')
+    assert cards.count() >= 6
+    first = cards.first.inner_text().lower()   # the database labels are shown in capitals
+    assert 'mysql' in first and 'postgresql' in first and 'sql server' in first and 'auto_increment' in first
+    assert app.real_errors() == []
+
+
+@pytest.mark.parametrize('n,ds', [(1, 'sales'), (2, 'fashion'), (3, 'finance'), (4, 'healthcare'), (5, 'politics')])
+def test_creating_tables_exercises_accept_the_model_answer(app, solution, n, ds):
+    app.open_exercise('m15-e0%d' % n, ds)
+    state, text = app.check(solution('m15', n, ds))
+    assert state == 'ok', text
+
+
+def test_update_without_where_and_delete_instead_of_truncate_are_caught(app):
+    app.open_exercise('m15-e03', 'sales')
+    state, text = app.check('UPDATE products SET unit_price = ROUND(unit_price * 1.10, 2);')
+    assert state == 'no' and 'WHERE' in text
+    app.open_exercise('m15-e02', 'sales')
+    state, text = app.check("DELETE FROM promotions; INSERT INTO promotions (promo_id, product_id, promo_code, discount_pct, start_date) VALUES "
+                            "(1, 2, 'NEWYEAR10', 10, '2026-01-01'), (2, 11, 'BOOKS15', 15, '2026-01-05'), (3, 21, 'FITJAN20', 20, '2026-01-10');")
+    assert state == 'no' and 'TRUNCATE' in text
+
+
+def test_create_table_exercise_notices_a_missing_foreign_key(app):
+    app.open_exercise('m15-e01', 'sport')
+    state, text = app.check('CREATE TABLE injuries (injury_id INT PRIMARY KEY, player_id INT NOT NULL, report_ref VARCHAR(20) NOT NULL UNIQUE, '
+                            'games_missed INT NOT NULL CHECK (games_missed >= 0), start_date DATE NOT NULL);')
+    assert state == 'no' and 'link' in text.lower()
+
+
+def test_truncate_runs_with_a_note_and_foreign_keys_block_bad_rows(app):
+    app.go('m15-examples'); app.page.wait_for_selector('.cell')
+    cells = app.page.locator('.cell')
+    trunc = [i for i in range(cells.count()) if 'TRUNCATE, DELETE and DROP' in cells.nth(i).inner_text()][0]
+    cells.nth(trunc).locator("button:has-text('Run')").click()
+    res = cells.nth(trunc).locator('.res'); res.locator('table').wait_for()
+    assert 'TRUNCATE runs as DELETE' in res.inner_text() and '0' in res.locator('td').first.inner_text()
+    fk = [i for i in range(cells.count()) if 'foreign key blocks' in cells.nth(i).inner_text()][0]
+    cells.nth(fk).locator("button:has-text('Run')").click()
+    err = cells.nth(fk).locator('.err'); err.wait_for()
+    assert 'FOREIGN KEY' in err.inner_text().upper()

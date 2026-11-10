@@ -99,14 +99,16 @@ function streaks() {
 function modById(id) { return MOD_BY_ID[id]; }
 function allDone(ids) { return ids.every(function (id) { return modById(id) && modById(id).exercises.every(function (e) { return isDone(e.id); }); }); }
 function cleanSolves() { return ALL_EX.filter(function (e) { return exState(e.id) === 'solved' && !ORDER.some(function (d) { return S.hints[e.id + '@' + d]; }); }).length; }
+function modsText(ids) { var n = ids.map(function (id) { return MOD_BY_ID[id].number; }); return n.length === 1 ? 'Module ' + n[0] : 'Modules ' + n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]; }
 var BADGES = [
   { id: 'first', name: 'First query', how: 'Solve your first exercise.', test: function () { return ALL_EX.some(function (e) { return isDone(e.id); }); } },
   { id: 'ten', name: 'Ten correct answers', how: 'Solve 10 exercises.', test: function () { return ALL_EX.filter(function (e) { return isDone(e.id); }).length >= 10; } },
   { id: 'fifty', name: 'Fifty correct answers', how: 'Solve 50 exercises.', test: function () { return ALL_EX.filter(function (e) { return isDone(e.id); }).length >= 50; } },
   { id: 'nohints', name: 'On my own', how: 'Solve 10 exercises without a hint or the solution.', test: function () { return cleanSolves() >= 10; } },
-  { id: 'joins', name: 'Join builder', how: 'Solve every exercise in Module 4.', test: function () { return allDone(['m04']); } },
-  { id: 'windows', name: 'Window wizard', how: 'Solve every exercise in Modules 7 and 8.', test: function () { return allDone(['m07', 'm08']); } },
-  { id: 'cleaner', name: 'Data cleaner', how: 'Solve every exercise in Module 13.', test: function () { return allDone(['m13']); } },
+  { id: 'tables', name: 'Table builder', how: 'Solve every exercise in ' + modsText(['m15']) + '.', test: function () { return allDone(['m15']); } },
+  { id: 'joins', name: 'Join builder', how: 'Solve every exercise in ' + modsText(['m04']) + '.', test: function () { return allDone(['m04']); } },
+  { id: 'windows', name: 'Window wizard', how: 'Solve every exercise in ' + modsText(['m07', 'm08']) + '.', test: function () { return allDone(['m07', 'm08']); } },
+  { id: 'cleaner', name: 'Data cleaner', how: 'Solve every exercise in ' + modsText(['m13']) + '.', test: function () { return allDone(['m13']); } },
   { id: 'capstone', name: 'Business reviewer', how: 'Solve every capstone task.', test: function () { return allDone(['m14']); } },
   { id: 'datasets', name: 'Sector hopper', how: 'Solve exercises on three different datasets.', test: function () { var u = {}; ALL_EX.forEach(function (e) { if (isDone(e.id)) u[S.progress[e.id].ds] = 1; }); return Object.keys(u).length >= 3; } },
   { id: 'streak', name: 'Seven-day streak', how: 'Practise on 7 days in a row.', test: function () { return streaks().best >= 7; } },
@@ -517,7 +519,7 @@ function scriptSkeleton(sql) {
 }
 function starter(ex, ds) {
   var v = ex.v[ds];
-  if (isScript(v)) return '-- Write your SQL here. The checker runs it on a fresh copy of the data,\n-- then runs the query shown under "How it is checked".\n';
+  if (isScript(v)) return '-- Write your SQL here. The checker runs it on a fresh copy of the data,\n-- then checks the result as described under "How it is checked".\n';
   var t = tablesIn(v.sql)[0] || ''; return '-- Return: ' + v.cols.join(', ') + '\nSELECT \nFROM ' + t + '\n';
 }
 function hint1(ex, ds) { var t = tablesIn(ex.v[ds].sql); return 'Look at ' + (t.length === 1 ? 'the ' + t[0] + ' table' : 'these tables: ' + t.join(', ')) + '. The output needs ' + ex.v[ds].cols.length + ' column' + (ex.v[ds].cols.length > 1 ? 's' : '') + ': ' + ex.v[ds].cols.join(', ') + '.'; }
@@ -783,7 +785,9 @@ function defs() { return '<defs><marker id="qc-arrow" viewBox="0 0 10 10" refX="
 
 /* ================================================================ layout pieces */
 var PHASES = {1: 'Phase 1 \u00b7 Fundamentals', 2: 'Phase 2 \u00b7 Intermediate SQL and analytics', 3: 'Phase 3 \u00b7 Advanced SQL and optimisation', 4: 'Phase 4 \u00b7 Real-world analysis'};
-var SHORT = {0: 'Start here', 1: 'Getting started', 13: 'Data cleaning', 14: 'Capstone',2: 'Cleaning up results', 3: 'Summarising data', 4: 'Joins', 5: 'Subqueries', 6: 'CTEs and set operations', 7: 'Ranking windows', 8: 'Time-series windows', 9: 'Pivots, dates, strings', 10: 'Views and procedures', 11: 'Indexes and tuning', 12: 'Transactions'};
+var SHORT = { m00: 'Start here', m01: 'Getting started', m15: 'Creating tables', m02: 'Cleaning up results', m03: 'Summarising data', m04: 'Joins', m05: 'Subqueries',
+  m06: 'CTEs and set operations', m07: 'Ranking windows', m08: 'Time-series windows', m09: 'Pivots, dates, strings', m10: 'Views and procedures',
+  m11: 'Indexes and tuning', m12: 'Transactions', m13: 'Data cleaning', m14: 'Capstone' };   // keyed by id: numbers come from course order
 var rail, main, routeId = null;
 function badge(level) { return h('span', { class: 'badge ' + level.toLowerCase(), text: level }); }
 function stateChip(id) {
@@ -808,7 +812,7 @@ function paintRail() {
   MODS.forEach(function (m) {
     if (m.phase !== lastPhase) { rail.appendChild(h('div', { class: 'rail-sec', text: PHASES[m.phase] })); lastPhase = m.phase; }
     var n = modDone(m);
-    rail.appendChild(link(m.id, h('span', { class: 'rl' }, h('b', { text: m.capstone ? '★' : m.number }), h('span', { text: SHORT[m.number] || m.title.split(':')[0] })), h('span', { class: 'cnt' + (n === m.exercises.length ? ' full' : ''), text: (n === m.exercises.length ? '✓ ' : '') + n + '/' + m.exercises.length })));
+    rail.appendChild(link(m.id, h('span', { class: 'rl' }, h('b', { text: m.capstone ? '★' : m.number }), h('span', { text: SHORT[m.id] || m.title.split(':')[0] })), h('span', { class: 'cnt' + (n === m.exercises.length ? ' full' : ''), text: (n === m.exercises.length ? '✓ ' : '') + n + '/' + m.exercises.length })));
   });
   rail.appendChild(h('div', { class: 'rail-sec', text: 'Practice' }));
   rail.appendChild(link('practice', 'Practice arena'));
@@ -978,6 +982,15 @@ function viewModule(m, tab) {
   var body = h('div', { class: 'stack' });
   if (tab === 'concepts') {
     m.concepts.forEach(function (c) { body.appendChild(h('article', { class: 'concept' }, h('h3', { html: md(c.term) }), h('p', { class: 'what', html: md(c.what) }), c.whenWhy ? h('p', { class: 'why', html: '<b>When and why:</b> ' + md(c.whenWhy) }) : null, c.syntax ? h('pre', { class: 'syntax', text: c.syntax }) : null)); });
+    if (m.dialects && m.dialects.length) {
+      body.appendChild(h('h2', { class: 'dialect-head', text: 'In other databases' }));
+      body.appendChild(h('p', { class: 'muted', text: 'You practise MySQL here. At work you may meet PostgreSQL or SQL Server. Most SQL is the same in all three, but these commands differ. Read them; you do not need to install anything.' }));
+      m.dialects.forEach(function (d) {
+        var grid = h('div', { class: 'dialect-grid' });
+        [['MySQL', d.mysql], ['PostgreSQL', d.postgres], ['SQL Server', d.sqlserver]].forEach(function (x) { grid.appendChild(h('div', null, h('span', { class: 'lbl', text: x[0] }), h('pre', { class: 'syntax', text: x[1] }))); });
+        body.appendChild(h('article', { class: 'concept dialect' }, h('h3', { text: d.topic }), grid, d.note ? h('p', { class: 'why', text: d.note }) : null));
+      });
+    }
     body.appendChild(h('div', { class: 'actions' }, m.examples.length ? h('a', { class: 'btn primary', href: '#' + m.id + '-examples', text: 'Next: run the examples' }) : h('a', { class: 'btn primary', href: '#' + m.id + '-exercises', text: m.capstone ? 'Next: start the review' : 'Next: try the exercises' })));
   } else if (tab === 'examples') {
     body.appendChild(h('p', { class: 'muted', html: 'Examples use the <b>' + esc(DSETS[ds].name) + '</b> dataset. Edit any query and run it; nothing you do here can break the data for the exercises.' }));
@@ -1040,8 +1053,13 @@ function viewExercise(ex) {
   var ret = h('div', { class: 'returns' });
   if (isScript(v)) {
     ret.appendChild(h('span', { class: 'lbl', text: 'How it is checked' }));
-    ret.appendChild(h('p', { class: 'sm', text: 'Your SQL runs on a fresh copy of the data. Then this query runs, and its result must match what the model answer leaves behind:' }));
-    ret.appendChild(h('pre', { class: 'skeleton verify', text: v.verify }));
+    if (v.verifyText) {   // plain words for beginners; the exact check query stays one click away
+      ret.appendChild(h('p', { class: 'sm', text: 'Your SQL runs on a fresh copy of the data. Then GageQuery checks ' + v.verifyText + ', and compares it with what the model answer leaves behind.' }));
+      ret.appendChild(h('details', { class: 'verify-more' }, h('summary', { text: 'Show the check query' }), h('pre', { class: 'skeleton verify', text: v.verify })));
+    } else {
+      ret.appendChild(h('p', { class: 'sm', text: 'Your SQL runs on a fresh copy of the data. Then this query runs, and its result must match what the model answer leaves behind:' }));
+      ret.appendChild(h('pre', { class: 'skeleton verify', text: v.verify }));
+    }
   } else {
     ret.appendChild(h('span', { class: 'lbl', text: 'Return these columns' }));
     var chips = h('div', { class: 'col-chips' }); v.cols.forEach(function (c) { chips.appendChild(h('code', { text: c })); });

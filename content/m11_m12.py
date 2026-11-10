@@ -87,7 +87,7 @@ NOTIN_BAD = {
 NULLCOL = {'sales': 'manager_id', 'sport': 'reports_to', 'fashion': 'manager_id', 'politics': 'party_id (independents have NULL)', 'finance': 'manager_id', 'healthcare': 'supervisor_id'}
 
 M11 = dict(
- id='m11', number=11, phase=3, title='Indexing and Query Optimisation', minutes=240,
+ id='m11', phase=3, title='Indexing and Query Optimisation', minutes=240,
  objectives=['Explain what an index is and when it helps', 'Read a query plan with EXPLAIN',
              'Write sargable filters that can use an index', 'Rewrite slow or fragile queries as joins and NOT EXISTS'],
  concept_weeks=[11],
@@ -228,7 +228,7 @@ def _m12():
 _T1, _T2, _T3, _T4, _T5 = _m12()
 
 M12 = dict(
- id='m12', number=12, phase=3, title='Transactions and Data Integrity', minutes=240,
+ id='m12', phase=3, title='Transactions and Data Integrity', minutes=240,
  objectives=['Group changes into a transaction with START TRANSACTION and COMMIT', 'Undo work safely with ROLLBACK',
              'Protect data with CHECK constraints', 'Explain ACID and isolation levels'],
  concept_weeks=[12],

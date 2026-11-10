@@ -2,7 +2,7 @@
 # Exercise variant tuple: (story, task, expected_columns, solution_sql)
 
 M1 = dict(
- id='m01', number=1, phase=1, title='Getting Started: SELECT, Filtering and Sorting', minutes=240,
+ id='m01', phase=1, title='Getting Started: SELECT, Filtering and Sorting', minutes=240,
  objectives=['Read a table with SELECT and FROM', 'Keep only the rows you need with WHERE',
              'Combine conditions with AND, OR, NOT, BETWEEN, IN and LIKE', 'Sort with ORDER BY and keep the top rows with LIMIT'],
  concept_weeks=[1],
@@ -151,7 +151,7 @@ M1 = dict(
  ])
 
 M2 = dict(
- id='m02', number=2, phase=1, title='Cleaning Up Results: NULLs, DISTINCT, CASE and Functions', minutes=240,
+ id='m02', phase=1, title='Cleaning Up Results: NULLs, DISTINCT, CASE and Functions', minutes=240,
  objectives=['Find missing values with IS NULL', 'Remove duplicates with DISTINCT', 'Rename and calculate columns',
              'Label rows with CASE', 'Join text with CONCAT and replace blanks with COALESCE'],
  concept_weeks=[2],
