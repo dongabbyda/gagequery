@@ -67,8 +67,8 @@ function setState(id, st) {
   var before = earned(), lvl = level().n, ex = EX_BY_ID[id], modWas = ex && modComplete(ex.mod), wasDone = isDone(id);
   if (rank[st] > rank[cur] || (st === 'solved' && cur === 'helped' && !S.helped[id])) S.progress[id] = { state: st, ds: curDs(), at: Date.now() };
   save(); paintRail(); paintMeter();
-  if (ex && !wasDone && isDone(id)) Analytics.event('solved/' + id);
-  if (ex && !modWas && modComplete(ex.mod)) Analytics.event('module-complete/' + ex.mod.id);
+  if (ex && !wasDone && isDone(id)) { Analytics.event('solved/' + id); GA.event('exercise_solved', { exercise_id: id, module_id: ex.mod.id, level: ex.level, help: st === 'helped' ? 'solution' : 'none' }); }
+  if (ex && !modWas && modComplete(ex.mod)) { Analytics.event('module-complete/' + ex.mod.id); GA.event('module_completed', { module_id: ex.mod.id }); }
   earned().forEach(function (b) { if (before.indexOf(b) < 0) toast('Badge earned: ' + BADGES.filter(function (x) { return x.id === b; })[0].name); });
   if (level().n > lvl) toast('Level up! You are now ' + level().name + '.');
 }
@@ -166,6 +166,86 @@ var Analytics = (function () {
     init: init,
     page: function (route, title) { if (route !== last) { last = route; send('/' + (route === 'home' ? '' : route), title, false); } },
     event: function (name) { send(name, name, true); }
+  };
+})();
+
+/* ================================================================ Google Analytics, only with consent
+   Nothing from Google loads until the learner clicks Allow. "No thanks" (or Do Not Track / Global Privacy Control) means
+   no script, no cookies and no requests to Google. Ads features stay denied either way. The choice is kept on this
+   device and can be changed on My progress; switching off disables GA and deletes its cookies. */
+var GA = (function () {
+  var id = null, loaded = false, last = null, KEY = 'gagequery-analytics';
+  function choice() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function remember(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+  function init() {
+    var m = document.querySelector('meta[name="ga-measurement-id"]'), v = m && m.getAttribute('content');
+    if (!/^G-[A-Z0-9]{4,16}$/.test(v || '')) return;
+    if (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.globalPrivacyControl) return;
+    id = v;
+    if (choice() === 'granted') load();
+    else if (choice() !== 'denied') showBanner();
+  }
+  function load() {
+    if (loaded || !id) return;
+    loaded = true;
+    window['ga-disable-' + id] = false;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };   // gtag needs the arguments object itself
+    window.gtag('consent', 'default', { analytics_storage: 'granted', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });
+    window.gtag('js', new Date());
+    window.gtag('config', id, { send_page_view: false });
+    var s = document.createElement('script');
+    s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
+    document.head.appendChild(s);
+    if (last) sendPage(last[0], last[1]);
+  }
+  /* The app uses #routes; GA ignores the part after #, so each route is reported as a path such as /gagequery/m04. */
+  function sendPage(route, title) {
+    var base = location.origin + location.pathname.replace(/\/+$/, '');
+    window.gtag('event', 'page_view', { page_location: base + '/' + (route === 'home' ? '' : route), page_title: title });
+  }
+  function page(route, title) {
+    if (last && last[0] === route) return;
+    last = [route, title];
+    if (loaded) sendPage(route, title);
+  }
+  function event(name, params) { if (loaded) window.gtag('event', name, params || {}); }
+  function deleteCookies() {
+    document.cookie.split(';').forEach(function (c) {
+      var name = c.split('=')[0].trim();
+      if (!/^_ga(_|$)/.test(name)) return;
+      var host = location.hostname, parts = host.split('.'), domains = ['', host, '.' + host];
+      for (var i = 1; i < parts.length - 1; i++) domains.push('.' + parts.slice(i).join('.'));
+      domains.forEach(function (d) { document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/' + (d ? '; domain=' + d : ''); });
+    });
+  }
+  function set(granted) {
+    remember(granted ? 'granted' : 'denied');
+    hideBanner();
+    if (granted) {
+      if (!loaded) { load(); return; }
+      window['ga-disable-' + id] = false;
+      window.gtag('consent', 'update', { analytics_storage: 'granted' });
+      return;
+    }
+    if (id) window['ga-disable-' + id] = true;
+    if (loaded && window.gtag) window.gtag('consent', 'update', { analytics_storage: 'denied' });
+    deleteCookies();
+  }
+  function hideBanner() { var b = document.getElementById('consent'); if (b) b.remove(); }
+  function showBanner() {
+    if (document.getElementById('consent')) return;
+    var b = h('section', { id: 'consent', class: 'consent', role: 'region', 'aria-label': 'Analytics choice' },
+      h('p', null, h('b', { text: 'Help improve GageQuery? ' }), h('span', { text: 'With your permission we use Google Analytics cookies to see which lessons help and where learners get stuck. We never send your SQL, your name or your progress, and the course works the same either way. ' }), h('a', { href: '#about', text: 'What is collected' })),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn primary sm', type: 'button', text: 'Allow', onclick: function () { set(true); toast('Thank you. You can change this on My progress.'); } }),
+        h('button', { class: 'btn sm', type: 'button', text: 'No thanks', onclick: function () { set(false); toast('No problem. Google Analytics stays off.'); } })));
+    document.body.appendChild(b);
+  }
+  return {
+    init: init, page: page, event: event, set: set,
+    available: function () { return !!id; },
+    on: function () { return choice() === 'granted'; }
   };
 })();
 
@@ -1205,6 +1285,12 @@ function viewProgress() {
   var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; S.days = {}; S.reviewed = {}; save(); toast('Progress erased.'); route(true); } });
   p.appendChild(h('div', { class: 'actions' }, downloadBtn, uploadBtn, fileInput));
   p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Copy and paste instead' }), area, h('div', { class: 'actions' }, exportBtn, importBtn)));
+  if (GA.available()) {
+    var gaOn = GA.on();
+    p.appendChild(h('h2', { text: 'Analytics cookies' }));
+    p.appendChild(h('p', { class: 'muted', text: gaOn ? 'Google Analytics is on. It helps show which lessons work and where learners get stuck. It never receives your SQL, your name or your progress.' : 'Google Analytics is off. Nothing is sent to Google. Turning it on helps show which lessons work and where learners get stuck.' }));
+    p.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', text: gaOn ? 'Turn off Google Analytics' : 'Allow Google Analytics', onclick: function () { GA.set(!gaOn); toast(gaOn ? 'Google Analytics is off and its cookies were removed.' : 'Google Analytics is on. Thank you.'); route(true); } })));
+  }
   p.appendChild(h('div', { class: 'actions' }, clearBtn));
   return p;
 }
@@ -1245,6 +1331,7 @@ function viewAbout() {
    ['XP, levels, streaks and badges', 'Easy exercises earn 50 XP, Medium 100 and Hard 200, or half if you used the solution. Days you run or check a query count towards your streak. Everything is worked out from the progress saved in this browser.'],
    ['Practice arena', 'The arena brings back exercises you have not solved, needed the solution or hints for, or solved more than a week ago. A mixed challenge gives you an exercise you know on a dataset you have not used for it.'],
    ['Privacy', 'The public site counts how many people visit and which modules they open, using GoatCounter, a privacy-friendly counter. It sets no cookies and never sees your name, your SQL or your progress, which stay in your browser. To tell new learners from returning ones, your browser keeps the date of your last visit; it is not an ID and is never sent. Everything is switched off if your browser sends Do Not Track.'],
+   ['Google Analytics (optional)', 'If you click Allow, Google Analytics also records which pages you open, the exercises you solve and modules you complete, with Google cookies, so we can see where learners get stuck. Advertising features are off. If you click No thanks, Google\u2019s code never loads. You can change your choice at any time on My progress.'],
    ['Reset', 'Reset code puts the starter back. Reset data restores the original tables if you changed them with INSERT, UPDATE or DELETE. Both can be undone for 10 seconds.'],
    ['Differences from a MySQL server', 'Integer division and some date functions behave differently between databases, so the model answers multiply by 100.0 when they need decimals. Error messages and EXPLAIN output are worded differently from MySQL\u2019s. Stored procedures and triggers will be shown as reference cards in later modules.']].forEach(function (s) { p.appendChild(h('h2', { text: s[0] })); p.appendChild(h('p', { text: s[1] })); });
   p.appendChild(h('h2', { text: 'Keyboard shortcuts' }));
@@ -1302,7 +1389,9 @@ function route(keepScroll) {
   closeRail();
   window.scrollTo(0, keepScroll === true ? y : 0);
   var h1 = pg.querySelector('h1'); document.title = (h1 ? h1.textContent + ' \u00b7 ' : '') + 'GageQuery';
-  Analytics.page(EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about)$/.test(r) ? r : 'home', document.title);
+  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about)$/.test(r) ? r : 'home';
+  Analytics.page(counted, document.title);
+  GA.page(counted, document.title);
 }
 function closeRail() { rail.classList.remove('open'); $('#scrim').classList.remove('open'); }
 
@@ -1340,6 +1429,7 @@ function boot() {
   $('#pal-btn').addEventListener('click', openPalette);
   initTheme();
   Analytics.init();
+  GA.init();
   $('#pal-kbd').textContent = MOD_KEY + ' K';
   document.addEventListener('click', function (ev) {
     var t = ev.target; while (t && t !== document && !(t.tagName === 'A' && (t.getAttribute('href') || '').charAt(0) === '#')) t = t.parentNode;

@@ -378,3 +378,115 @@ def test_engine_and_checker_work_in_firefox_too(firefox, base_url):
     assert 'ok' in page.wait_for_selector('.fb', timeout=20000).get_attribute('class').split()
     assert errors == []
     page.close()
+
+
+
+GA_ID = 'G-CF1GPT184M'
+ADD_GA = ("document.addEventListener('readystatechange', () => { if (document.readyState === 'interactive' && !document.querySelector('meta[name=ga-measurement-id]')) {"
+          " const m = document.createElement('meta'); m.name = 'ga-measurement-id'; m.content = '%s'; document.head.appendChild(m); } });" % GA_ID)
+
+
+def ga_session(browser, base_url, extra_init=None, viewport=(1400, 900)):
+    """A page with Google Analytics configured. Every request to Google is answered locally and recorded."""
+    ctx = browser.new_context(viewport={'width': viewport[0], 'height': viewport[1]})
+    google = []
+
+    def answer(route):
+        google.append(route.request.url)
+        if 'googletagmanager.com/gtag/js' in route.request.url:
+            route.fulfill(status=200, content_type='text/javascript', body='window.__gtagLoaded = true;')
+        else:
+            route.fulfill(status=204, body='')
+    for pattern in ('https://*.googletagmanager.com/**', 'https://*.google-analytics.com/**', 'https://*.analytics.google.com/**'):
+        ctx.route(pattern, answer)
+    if extra_init:
+        ctx.add_init_script(extra_init)
+    ctx.add_init_script(ADD_GA)
+    page = ctx.new_page()
+    page.goto(base_url + '#home')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    page.wait_for_timeout(300)
+    return ctx, page, google
+
+
+def wait_until(page, expr, timeout=10):
+    """Poll a condition from Python: the site's CSP (rightly) blocks the eval that wait_for_function uses."""
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        if page.evaluate('() => ' + expr):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError('timed out waiting for ' + expr)
+
+
+def ga_calls(page):
+    return page.evaluate("(window.dataLayer || []).map(a => Array.from(a).map(x => x instanceof Date ? 'DATE' : x))")
+
+
+def test_google_analytics_waits_for_consent_and_no_thanks_means_nothing_loads(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url)
+    assert page.is_visible('#consent') and 'Google Analytics' in page.inner_text('#consent')
+    assert google == [] and page.evaluate('typeof window.gtag') == 'undefined', 'nothing from Google before a choice'
+    page.click("#consent button:has-text('No thanks')")
+    page.evaluate("location.hash = 'learn'"); page.wait_for_timeout(300)
+    assert page.query_selector('#consent') is None and google == [] and page.evaluate('typeof window.gtag') == 'undefined'
+    page.reload(); page.wait_for_selector('#engine.ready', state='attached', timeout=60000); page.wait_for_timeout(300)
+    assert page.query_selector('#consent') is None and google == [], 'the choice is remembered'
+    assert page.evaluate("localStorage.getItem('gagequery-analytics')") == 'denied'
+    assert not [c for c in ctx.cookies() if c['name'].startswith('_ga')]
+    ctx.close()
+
+
+def test_google_analytics_after_allow_reports_routes_and_milestones_without_sql(browser, base_url, solution):
+    ctx, page, google = ga_session(browser, base_url)
+    page.click("#consent button:has-text('Allow')")
+    wait_until(page, 'window.__gtagLoaded === true')
+    assert any('gtag/js?id=' + GA_ID in u for u in google)
+    calls = ga_calls(page)
+    assert ['consent', 'default', {'analytics_storage': 'granted', 'ad_storage': 'denied', 'ad_user_data': 'denied', 'ad_personalization': 'denied'}] in calls
+    assert ['config', GA_ID, {'send_page_view': False}] in calls
+    page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(300)
+    page.select_option('#ds-select', 'sales'); page.wait_for_timeout(300)
+    page.evaluate("location.hash = 'm00-e01'"); page.wait_for_selector('.task')
+    page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", solution('m00', 1, 'sales'))
+    page.click(".action-bar button:has-text('Check answer')"); page.wait_for_selector('.fb.ok', timeout=15000); page.wait_for_timeout(300)
+    calls = ga_calls(page)
+    views = [c[2]['page_location'].split('/')[-1] for c in calls if c[:2] == ['event', 'page_view']]
+    assert views[:3] == ['', 'm04', 'm00-e01'], views
+    assert ['event', 'exercise_solved', {'exercise_id': 'm00-e01', 'module_id': 'm00', 'level': 'Easy', 'help': 'none'}] in calls
+    assert 'select' not in str(calls).lower(), 'no SQL may reach Google'
+    ctx.close()
+
+
+def test_turning_google_analytics_off_on_my_progress_disables_it_and_removes_cookies(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url)
+    page.click("#consent button:has-text('Allow')")
+    wait_until(page, 'window.__gtagLoaded === true')
+    page.evaluate("document.cookie = '_ga=GA1.1.123.456; path=/'; document.cookie = '_ga_TEST=GS1.1.1; path=/'")
+    page.evaluate("location.hash = 'progress'"); page.wait_for_selector("button:has-text('Turn off Google Analytics')")
+    page.click("button:has-text('Turn off Google Analytics')")
+    assert page.evaluate("window['ga-disable-%s']" % GA_ID) is True
+    assert '_ga' not in page.evaluate('document.cookie')
+    assert page.evaluate("localStorage.getItem('gagequery-analytics')") == 'denied'
+    page.wait_for_selector("button:has-text('Allow Google Analytics')")
+    ctx.close()
+
+
+def test_no_google_analytics_banner_under_do_not_track_or_without_an_id(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url, extra_init="Object.defineProperty(navigator, 'doNotTrack', {get: () => '1'});")
+    assert page.query_selector('#consent') is None and google == []
+    ctx.close()
+    # the normal test build has no GA_MEASUREMENT_ID, so the app shows no banner and never mentions it on My progress
+    ctx = browser.new_context(); page = ctx.new_page(); page.goto(base_url + '#progress')
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    assert page.query_selector('#consent') is None and 'Analytics cookies' not in page.inner_text('main')
+    ctx.close()
+
+
+def test_consent_banner_fits_a_phone(browser, base_url):
+    ctx, page, google = ga_session(browser, base_url, viewport=(390, 844))
+    box = page.query_selector('#consent').bounding_box()
+    assert box['x'] >= 0 and box['x'] + box['width'] <= 390 and box['y'] + box['height'] <= 844
+    assert page.evaluate('document.documentElement.scrollWidth') <= 390
+    ctx.close()
