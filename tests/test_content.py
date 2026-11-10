@@ -9,7 +9,7 @@ DATASETS = ['sales', 'sport', 'fashion', 'politics', 'finance', 'healthcare']
 def test_every_query_verified():
     report = json.load(open(need(os.path.join(BUILD, 'verify_report.json')), encoding='utf-8'))
     assert report['problems'] == [], '\n'.join(report['problems'])
-    assert report['modules'] == 15 and report['datasets'] == len(DATASETS)
+    assert report['modules'] == 16 and report['datasets'] == len(DATASETS)
     assert report['queries_checked'] == (report['examples'] + report['exercises']) * len(DATASETS)
 
 
@@ -84,3 +84,22 @@ def test_page_has_no_remote_resources_and_carries_its_own_csp():
     assert 'ga-measurement-id' not in head, 'a normal build has no Google Analytics; only a build given GA_MEASUREMENT_ID does'
     headers = open(need(os.path.join(ROOT, 'public', '_headers')), encoding='utf-8').read()
     assert 'googleapis' not in headers and "frame-ancestors 'none'" in headers
+
+
+
+def test_modules_are_numbered_by_course_order(content):
+    ids = [m['id'] for m in content['modules']]
+    assert [m['number'] for m in content['modules']] == list(range(len(ids))), 'the number shown is the position in the course'
+    assert ids[:4] == ['m00', 'm01', 'm15', 'm02'], 'Creating and Changing Tables comes straight after Getting Started'
+    assert content['modules'][-1]['capstone'], 'the capstone stays last'
+
+
+def test_postgresql_snippets_on_dialect_cards_really_run():
+    import shutil
+    if not shutil.which('node') or not os.path.isdir(os.path.join(ROOT, 'node_modules', '@electric-sql', 'pglite')):
+        pytest.skip('needs node and the PGlite dev dependency (npm ci)')
+    out = subprocess.run(['node', os.path.join(ROOT, 'tests', 'check_dialects.mjs')], capture_output=True, text=True, encoding='utf-8', timeout=300)
+    assert out.returncode == 0, out.stderr[-2000:]
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result['problems'] == [], result['problems']
+    assert result['checked'] >= 6

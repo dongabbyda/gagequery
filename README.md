@@ -4,10 +4,12 @@
 Every lesson has runnable examples and exercises, and every answer is checked instantly — in the learner's
 own browser, with no server and no sign-up.
 
-- **15 modules** in four phases: a 30-minute start, Fundamentals → Intermediate SQL & Analytics → Advanced SQL &
-  Optimisation → Real-world analysis (Data Cleaning and a six-task capstone business review)
+- **16 modules** in four phases: a 30-minute start, Fundamentals (including creating and changing tables) →
+  Intermediate SQL & Analytics → Advanced SQL & Optimisation → Real-world analysis (Data Cleaning and a six-task
+  capstone business review)
 - **6 real-world datasets**, switchable at any time: Sales (ShopCorp), Sport, Fashion, Politics, Finance, Healthcare
-- **83 examples and 75 exercises**, each written for all six datasets (450 checked exercise variants)
+- **92 examples and 80 exercises**, each written for all six datasets (480 checked exercise variants)
+- **MySQL syntax, with "In other databases" cards** showing the PostgreSQL and SQL Server equivalents where they differ
 - **Smart checking:** compares results, not text; catches common mistakes (`= NULL`, fan-out joins, integer
   division, the `NOT IN` + `NULL` trap, a JOIN without ON, a missing GROUP BY); shows which columns, rows and order
   already match; checks views, indexes and transactions by inspecting the database afterwards
@@ -32,7 +34,7 @@ npm test         # content checks + end-to-end browser tests
 
 ## How it works
 
-The build runs every example and model answer against every dataset (948 queries) using Python's SQLite with
+The build runs every example and model answer against every dataset (1,032 queries) using Python's SQLite with
 the same MySQL compatibility functions the app uses, and refuses to build if anything is off. It then inlines the
 SQL engine ([sql.js](https://github.com/sql-js/sql.js)), the editor ([CodeMirror 5](https://codemirror.net/5/)),
 the course content and all six databases into one page. In the browser the engine runs in a Web Worker with a

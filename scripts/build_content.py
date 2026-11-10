@@ -26,6 +26,7 @@ from content.m07_m08 import M7, M8
 from content.m09_m10 import M9, M10
 from content.m11_m12 import M11, M12
 from content.m13_m14 import M13, M14
+from content.m15 import M15
 
 DS = ['sales', 'sport', 'fashion', 'politics', 'finance', 'healthcare']
 META = {
@@ -110,6 +111,9 @@ def rewrite(st):
     if m:
         return ("SELECT name AS Field, type AS Type, CASE WHEN \"notnull\"=1 THEN 'NO' ELSE 'YES' END AS \"Null\", "
                 "CASE WHEN pk>0 THEN 'PRI' ELSE '' END AS \"Key\" FROM pragma_table_info('%s')" % m.group(1))
+    m = re.match(r'TRUNCATE\s+(?:TABLE\s+)?`?([A-Za-z_]\w*)`?$', t, re.I)
+    if m:   # SQLite has no TRUNCATE; for checking results, emptying the table is the same
+        return 'DELETE FROM %s' % m.group(1)
     t = re.sub(r'^START\s+TRANSACTION', 'BEGIN', t, flags=re.I)
     t = re.sub(r'^EXPLAIN\s+(SELECT|WITH)', r'EXPLAIN QUERY PLAN \1', t, flags=re.I)
     t = re.sub(r'\bAS\s+(?:SIGNED|UNSIGNED)\b', 'AS INTEGER', t, flags=re.I)
@@ -192,10 +196,16 @@ def check_text(rules, sql):
     return bad
 
 
-for mod in (M0, M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M14):
-    m = dict(id=mod['id'], number=mod['number'], phase=mod['phase'], title=mod['title'], minutes=mod['minutes'],
+# Course order. Ids are permanent (progress, analytics and ratings use them); the number learners see is the position.
+COURSE = (M0, M1, M15, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M14)
+for number, mod in enumerate(COURSE):
+    m = dict(id=mod['id'], number=number, phase=mod['phase'], title=mod['title'], minutes=mod['minutes'],
              objectives=mod['objectives'], concepts=concepts_for(mod), examples=[], exercises=[],
-             capstone=bool(mod.get('capstone')))
+             capstone=bool(mod.get('capstone')), dialects=mod.get('dialects', []))
+    for d in m['dialects']:
+        missing = [k for k in ('topic', 'mysql', 'postgres', 'sqlserver') if not d.get(k)]
+        if missing:
+            problems.append('%s dialect card %r is missing %s' % (mod['id'], d.get('topic'), missing))
     for i, ex in enumerate(mod['examples'], 1):
         e = dict(id='%s-x%02d' % (mod['id'], i), title=ex['title'], level=ex['level'], explanation=ex['explanation'],
                  tryIt=ex.get('tryIt'), visual=ex.get('visual'), v=ex['v'], ref=bool(ex.get('ref')))

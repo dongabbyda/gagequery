@@ -1,7 +1,7 @@
 # Modules 5 and 6, MySQL syntax, one variant per dataset.
 
 M5 = dict(
- id='m05', number=5, phase=2, title='Subqueries: Queries Inside Queries', minutes=240,
+ id='m05', phase=2, title='Subqueries: Queries Inside Queries', minutes=240,
  objectives=['Compare rows with a value computed by a scalar subquery', 'Filter with IN and EXISTS against another query',
              'Aggregate first in a derived table, then filter the summary', 'Compare each row with its own group using a correlated subquery'],
  concept_weeks=[5],
@@ -106,7 +106,7 @@ M5 = dict(
  ])
 
 M6 = dict(
- id='m06', number=6, phase=2, title='CTEs, Set Operations and Recursive Queries', minutes=240,
+ id='m06', phase=2, title='CTEs, Set Operations and Recursive Queries', minutes=240,
  objectives=['Name a step of a query with WITH', 'Chain CTEs to build an answer in small, testable pieces',
              'Stack and compare result sets with UNION, INTERSECT and EXCEPT', 'Walk a hierarchy with a recursive CTE'],
  concept_weeks=[6],

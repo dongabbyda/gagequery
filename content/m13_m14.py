@@ -118,7 +118,7 @@ def _m13_e5(c):
 
 
 M13 = dict(
- id='m13', number=13, phase=4, title='Data Cleaning: Fixing Messy Real-World Data', minutes=240,
+ id='m13', phase=4, title='Data Cleaning: Fixing Messy Real-World Data', minutes=240,
  objectives=['Spot stray spaces, mixed case, blanks and duplicates before you analyse', 'Tidy text with TRIM, UPPER, LOWER and REPLACE',
              'Turn text into numbers and dates you can calculate with', 'Standardise labels with CASE and remove duplicates with ROW_NUMBER',
              'Join messy labels to a clean lookup table'],
@@ -378,7 +378,7 @@ CAP6 = dict(
 )
 
 M14 = dict(
- id='m14', number=14, phase=4, title='Capstone: The Business Review', minutes=300, capstone=True,
+ id='m14', phase=4, title='Capstone: The Business Review', minutes=300, capstone=True,
  objectives=['Answer a real business question from start to finish, choosing the tables and joins yourself',
              'Combine aggregation, CASE, CTEs and window functions in one query',
              'Present results the way a manager reads them: headline numbers, trends, rankings, segments and action lists'],

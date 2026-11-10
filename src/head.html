@@ -402,6 +402,13 @@ a.mod-card:hover,.ex-card:hover,.ds-card:hover{box-shadow:var(--shadow-2);transf
 .fb-form select{font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;max-width:100%}
 .fb-form .lbl{margin-top:6px}
 .task .report{margin:12px 0 0}
+.dialect-head{margin-top:var(--s5)}
+.dialect-grid{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.dialect-grid>div{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px;align-items:center}
+.dialect-grid .lbl{margin:0}
+.dialect-grid .syntax{margin:0;white-space:pre;font-size:13px}
+@media (max-width:560px){.dialect-grid>div{grid-template-columns:minmax(0,1fr);gap:2px}}
+.verify-more summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--accent);margin:2px 0 6px}
 .tab .step{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-2);color:var(--muted);font-size:12px;margin-right:8px}
 .tab[aria-selected="true"] .step{background:var(--accent);color:var(--accent-ink)}
 .ex-card .ex-top .xp-tag{margin-left:2px}

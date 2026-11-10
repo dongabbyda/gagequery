@@ -17,7 +17,7 @@ FK = {  # child table, foreign key column, parent table
 }
 
 M0 = dict(
- id='m00', number=0, phase=1, title='Start Here: Databases, Tables and Keys', minutes=30,
+ id='m00', phase=1, title='Start Here: Databases, Tables and Keys', minutes=30,
  objectives=['Say what a database, a table, a row and a column are', 'Read a table\'s columns and data types',
              'Explain how a primary key and a foreign key connect two tables', 'Run your first three queries'],
  concept_weeks=[],
@@ -31,9 +31,9 @@ M0 = dict(
   dict(term='Primary key', what='A primary key is a column whose value is different on every row, such as customer_id.',
        whenWhy='It is how you point at exactly one row, and how other tables refer to it.'),
   dict(term='Foreign key', what='A foreign key is a column that holds another table\'s primary key, such as orders.customer_id.',
-       whenWhy='Foreign keys are the links between tables. Module 4 uses them to join tables together.'),
+       whenWhy='Foreign keys are the links between tables. The Joins module uses them to combine tables.'),
   dict(term='NULL', what='NULL means "no value": unknown or not recorded. It is not zero and not an empty text.',
-       whenWhy='Real data has gaps. Module 2 shows how to find and handle them.'),
+       whenWhy='Real data has gaps. The Cleaning up results module shows how to find and handle them.'),
  ],
  examples=[
   dict(title='SHOW TABLES lists what is in the database', level='Easy',

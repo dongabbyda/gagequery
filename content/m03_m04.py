@@ -1,7 +1,7 @@
 # Modules 3 and 4, MySQL syntax, one variant per dataset.
 
 M3 = dict(
- id='m03', number=3, phase=1, title='Summarising Data: Aggregates, GROUP BY and HAVING', minutes=240,
+ id='m03', phase=1, title='Summarising Data: Aggregates, GROUP BY and HAVING', minutes=240,
  objectives=['Summarise a whole table with COUNT, SUM, AVG, MIN and MAX', 'Build one summary row per group with GROUP BY',
              'Explain the difference between COUNT(*) and COUNT(column)', 'Filter groups with HAVING and rows with WHERE'],
  concept_weeks=[3],
@@ -115,7 +115,7 @@ M3 = dict(
  ])
 
 M4 = dict(
- id='m04', number=4, phase=1, title='Combining Tables: JOINs', minutes=240,
+ id='m04', phase=1, title='Combining Tables: JOINs', minutes=240,
  objectives=['Combine two tables on a key with INNER JOIN', 'Keep unmatched rows with LEFT JOIN and find what is missing',
              'Join a table to itself', 'Chain three or more tables and summarise across them'],
  concept_weeks=[4],

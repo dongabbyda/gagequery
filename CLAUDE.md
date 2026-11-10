@@ -1,6 +1,6 @@
 # GageQuery — notes for Claude Code
 
-GageQuery is an interactive SQL course for beginners: 15 modules (0–13 plus a capstone, 14), six sector datasets (Sales, Sport, Fashion,
+GageQuery is an interactive SQL course for beginners: 16 modules (0–14 plus a capstone, 15), six sector datasets (Sales, Sport, Fashion,
 Politics, Finance, Healthcare), and exercises that are checked by running SQL **in the learner's browser**.
 There is no backend. The build produces one self-contained HTML page plus a few static files in `dist/`.
 
@@ -19,6 +19,7 @@ npm test             # full suite: content checks + headless browser tests (abou
 npm run test:fast    # content and build checks only, no browser (a few seconds)
 npm run serve        # http://127.0.0.1:8000 with production headers
 npm run data         # regenerate the five generated datasets (only after changing datasets/generate.py)
+node tests/check_dialects.mjs   # run the PostgreSQL snippets on the "In other databases" cards (also part of npm test)
 ```
 
 `npm run build` exits non-zero if any example or exercise fails verification; read the printed problem list.
@@ -31,7 +32,7 @@ npm run data         # regenerate the five generated datasets (only after changi
 | `src/engine.js` | SQL engine in a Web Worker: sql.js (SQLite) + MySQL compatibility shims, check/verify logic |
 | `src/head.html` | `<title>`, fonts, and all CSS (theme tokens, light + dark) |
 | `src/shell.html`, `src/logo.svg` | Static page frame (top bar, rail, palette) |
-| `content/m00.py`, `content/mNN_mNN.py` | Course content (Module 0 alone, then two modules per file): examples + exercises with a variant per dataset. `m13_m14.py` holds Data Cleaning and the capstone |
+| `content/m00.py`, `content/mNN_mNN.py`, `content/m15.py` | Course content: examples + exercises with a variant per dataset. Module ids (`m00`…`m15`) are permanent keys for progress, analytics and ratings; the number learners see is the module's position in `COURSE` in `scripts/build_content.py`. `m15.py` is Creating and Changing Tables (shown as Module 2); `m13_m14.py` holds Data Cleaning and the capstone |
 | `content/concepts.json` | Concept definitions (term, what, when/why) pulled in by `concept_weeks` |
 | `datasets/*.sql` | The six databases. `sales.sql` (ShopCorp) is hand-written except its `web_signups` block; the other five come from `generate.py`. Each ends with a deliberately messy sign-up table for Module 13 |
 | `scripts/build_content.py` | Builds `build/content.json`; runs every query on every dataset with Python sqlite3 + the same shims |

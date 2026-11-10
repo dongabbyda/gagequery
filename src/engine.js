@@ -91,6 +91,8 @@
     if (/^\s*SHOW\s+TABLES\s*$/i.test(t)) return { sql: "SELECT name AS table_name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name", notes: notes };
     var d = /^\s*(?:DESCRIBE|DESC|SHOW\s+COLUMNS\s+FROM)\s+`?([A-Za-z_]\w*)`?\s*$/i.exec(t);
     if (d) return { sql: "SELECT name AS Field, type AS Type, CASE WHEN \"notnull\"=1 THEN 'NO' ELSE 'YES' END AS \"Null\", CASE WHEN pk>0 THEN 'PRI' ELSE '' END AS \"Key\" FROM pragma_table_info('" + d[1] + "')", notes: notes };
+    var tr = /^\s*TRUNCATE\s+(?:TABLE\s+)?`?([A-Za-z_]\w*)`?\s*$/i.exec(t);
+    if (tr) return { sql: 'DELETE FROM ' + tr[1], notes: ['TRUNCATE runs as DELETE in this browser engine. On a MySQL server it is faster, resets AUTO_INCREMENT and cannot be rolled back.'] };
     if (/^\s*START\s+TRANSACTION\b/i.test(t)) t = t.replace(/^\s*START\s+TRANSACTION/i, 'BEGIN');
     if (/^\s*EXPLAIN\s+(SELECT|WITH)/i.test(t)) { t = t.replace(/^\s*EXPLAIN\s+/i, 'EXPLAIN QUERY PLAN '); notes.push('EXPLAIN shows the browser engine’s plan. SCAN means a full table read (type ALL in MySQL); SEARCH means an index is used.'); }
     var cr = /^\s*CREATE\s+OR\s+REPLACE\s+VIEW\s+(\w+)/i.exec(t);
@@ -123,7 +125,8 @@
     return res;
   }
   /* Cap how big a learner's database can grow (about 32 MB), so a runaway INSERT cannot exhaust the browser's memory. */
-  function limit(d) { try { d.exec('PRAGMA max_page_count = 8000'); } catch (e) {} return d; }
+  /* Match the verifier: foreign keys are off unless an exercise's setup switches them on. */
+  function limit(d) { try { d.exec('PRAGMA max_page_count = 8000; PRAGMA foreign_keys = OFF'); } catch (e) {} return d; }
   function fresh(ds) { var d = new SQL.Database(pristine[ds]); register(d); return limit(d); }
   function quiet(db, sql) { if (!sql) return; splitSql(sql).forEach(function (s) { var r = rewrite(s); if (r.sql) try { db.exec(r.sql); } catch (e) {} }); }
 
@@ -167,6 +170,7 @@
         }
         case 'run': {
           var db = working[m.ds];
+          try { db.exec('PRAGMA foreign_keys = OFF'); } catch (e) {}   // only this run's setup may switch them on
           quiet(db, m.pre);
           return exec(db, m.sql, 500);
         }
