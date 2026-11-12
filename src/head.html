@@ -409,6 +409,28 @@ a.mod-card:hover,.ex-card:hover,.ds-card:hover{box-shadow:var(--shadow-2);transf
 .dialect-grid .syntax{margin:0;white-space:pre;font-size:13px}
 @media (max-width:560px){.dialect-grid>div{grid-template-columns:minmax(0,1fr);gap:2px}}
 .verify-more summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--accent);margin:2px 0 6px}
+/* practice arena banner: always dark, so it reads the same in light and dark themes */
+.arena-hero{display:flex;gap:var(--s5);align-items:flex-end;justify-content:space-between;flex-wrap:wrap;border-radius:var(--r-lg);padding:22px 24px;margin:0 0 var(--s4);color:#fff;
+  background:linear-gradient(100deg,#0b1024 0%,#1c2452 38%,#4b5585 56%,#1c2452 76%,#0b1024 100%);box-shadow:var(--shadow-1)}
+.arena-text{flex:1 1 320px;min-width:0}
+.arena-hero .eyebrow{color:var(--rail-hi)}
+.arena-hero h1{color:#fff;margin:4px 0 6px}
+.arena-hero p{color:#dfe3f5;margin:0;max-width:56ch}
+.arena-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.arena-seg,.arena-select{display:inline-flex;align-items:center;gap:4px;background:rgba(5,8,20,.62);border:1px solid rgba(255,255,255,.2);border-radius:99px;padding:4px 6px 4px 12px;color:#dfe3f5;font-size:14px}
+.arena-seg-lbl{display:inline-flex;align-items:center;gap:6px;margin-right:4px;white-space:nowrap}
+.arena .ico,.arena-hero .ico{display:inline-flex}
+.arena-hero .ico svg{width:15px;height:15px}
+.arena-opt{font:inherit;font-size:14px;color:#dfe3f5;background:transparent;border:0;border-radius:99px;padding:5px 12px;cursor:pointer;transition:background-color var(--fast) var(--ease),color var(--fast) var(--ease)}
+.arena-opt:hover{background:rgba(255,255,255,.12)}
+.arena-opt[aria-pressed="true"]{background:var(--rail-hi);color:#04201d;font-weight:700}
+.arena-opt:focus-visible,.arena-select select:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.arena-select{padding:4px 8px 4px 12px;gap:8px}
+.arena-select select{font:inherit;font-size:14px;font-weight:600;color:#fff;background:transparent;border:0;padding:5px 4px;max-width:230px;cursor:pointer}
+.arena-select select option{color:#000}
+.arena-hide{font-size:14.5px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.ds-chip{padding:1px 9px;font-size:12px}
+@media (max-width:700px){.arena-hero{padding:18px;background:linear-gradient(160deg,#0b1024 0%,#1c2452 60%,#2b3470 100%)}.arena-controls{width:100%}.arena-seg{gap:0;padding:4px 6px 4px 10px}.arena-seg-lbl{margin-right:2px}.arena-opt{padding:5px 8px}.arena-select{width:100%}.arena-select select{max-width:none;flex:1}}
 .tab .step{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-2);color:var(--muted);font-size:12px;margin-right:8px}
 .tab[aria-selected="true"] .step{background:var(--accent);color:var(--accent-ink)}
 .ex-card .ex-top .xp-tag{margin-left:2px}

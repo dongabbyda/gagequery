@@ -1362,40 +1362,92 @@ function reviewQueue() {
   });
   return items.sort(function (a, b) { return b.w - a.w || a.t - b.t || ALL_EX.indexOf(a.e) - ALL_EX.indexOf(b.e); });
 }
+/* Practice arena: filter every exercise by difficulty and dataset and practise freely. Filters last for the visit only. */
+var arena = { level: 'All', ds: 'all', hideSolved: false, shown: 12 };
+var ARENA_ICON = {
+  filter: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5V13l-3-1.5V8.5z"/></svg>',
+  db: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="3.5" rx="5" ry="2"/><path d="M3 3.5v9c0 1.1 2.2 2 5 2s5-.9 5-2v-9M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>'
+};
+/* The dataset an exercise opens on: the chosen one, or (for "all datasets") a rotation so practice stays varied. */
+function arenaDs(e) { return arena.ds === 'all' ? ORDER[ALL_EX.indexOf(e) % ORDER.length] : arena.ds; }
+function arenaMatches(e) { return (arena.level === 'All' || e.level === arena.level) && !(arena.hideSolved && isDone(e.id)); }
+function arenaReset() { arena.level = 'All'; arena.ds = 'all'; arena.hideSolved = false; arena.shown = 12; route(true); }
+
+function arenaCard(e, ds, why) {
+  var d = DSETS[ds];
+  return h('a', { class: 'ex-card', href: '#' + e.id, onclick: function () { setDs(ds, true); } },
+    h('div', { class: 'ex-top' }, h('b', { text: modName(e.mod) + ' · ' + exName(e) }), badge(e.level), h('span', { class: 'xp-tag', text: XP[e.level] + ' XP' }),
+      h('span', { class: 'chip static ds-chip', text: d.sector }), h('span', { class: 'sp' }), stateChip(e.id)),
+    why ? h('p', { class: 'why-review', text: why }) : null,
+    h('p', { class: 'muted', text: e.v[ds].story }), h('p', { html: md(e.v[ds].task) }));
+}
+
+function arenaHero() {
+  var seg = h('div', { class: 'arena-seg', role: 'group', 'aria-label': 'Difficulty' },
+    h('span', { class: 'arena-seg-lbl' }, h('span', { class: 'ico', 'aria-hidden': 'true', html: ARENA_ICON.filter }), 'Difficulty:'));
+  ['All', 'Easy', 'Medium', 'Hard'].forEach(function (lv) {
+    seg.appendChild(h('button', { type: 'button', class: 'arena-opt', 'aria-pressed': arena.level === lv ? 'true' : 'false', text: lv, onclick: function () { arena.level = lv; arena.shown = 12; route(true); } }));
+  });
+  var sel = h('select', { id: 'arena-ds', 'aria-label': 'Dataset' }, h('option', { value: 'all', text: 'All ' + ORDER.length + ' datasets' }));
+  ORDER.forEach(function (id) { sel.appendChild(h('option', { value: id, text: dsLabel(id), selected: arena.ds === id })); });
+  sel.value = arena.ds;
+  sel.addEventListener('change', function () { arena.ds = sel.value; arena.shown = 12; route(true); });
+  var pick = h('label', { class: 'arena-select' }, h('span', { class: 'ico', 'aria-hidden': 'true', html: ARENA_ICON.db }), sel);
+  return h('section', { class: 'arena-hero' },
+    h('div', { class: 'arena-text' },
+      h('div', { class: 'eyebrow', text: 'Practice arena · mixed-sector skill drills' }),
+      h('h1', { text: 'SQL Practice Arena' }),
+      h('p', { text: 'Filter by difficulty or dataset (' + ORDER.map(function (id) { return DSETS[id].sector; }).join(', ') + ') and practise freely.' })),
+    h('div', { class: 'arena-controls' }, seg, pick));
+}
+
 function viewPractice() {
-  var p = page(), ds = curDs(), st = streaks();
-  p.appendChild(h('div', { class: 'eyebrow', text: 'Practice arena' }));
-  p.appendChild(h('h1', { text: 'Review what you have learned' }));
-  p.appendChild(h('p', { class: 'lede', text: 'Short reviews make SQL stick. Your queue puts first what you found hardest: exercises you have not solved, ones where you needed the solution or hints, and ones you solved a while ago.' }));
+  var p = page('arena-page');
+  p.appendChild(arenaHero());
+  var st = streaks(), started = ALL_EX.some(function (e) { return exState(e.id) !== 'new'; });
   p.appendChild(h('div', { class: 'stats' },
     h('div', null, h('b', { text: st.daily }), h('span', { text: 'day streak' })), h('div', null, h('b', { text: st.weekly }), h('span', { text: 'week streak' })),
     h('div', null, h('b', { text: level().name }), h('span', { text: xp() + ' XP' }))));
-  var q = reviewQueue();
-  if (!q.length) {
-    var started = ALL_EX.some(function (e) { return exState(e.id) !== 'new'; });
-    p.appendChild(h('p', { class: 'muted', text: started ? 'Nothing to review right now. Everything you started is solved and fresh. Carry on with the course, or try a mixed challenge below.' : 'The arena fills up as you work. Solve a few exercises first.' }));
-    if (!started) { p.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + MODS[0].id, text: 'Start here' }))); return p; }
-  } else {
-    p.appendChild(h('h2', { text: 'Your review queue' }));
-    var list = h('div', { class: 'stack' });
-    q.slice(0, 6).forEach(function (it) {
-      var e = it.e;
-      list.appendChild(h('a', { class: 'ex-card', href: '#' + e.id },
-        h('div', { class: 'ex-top' }, h('b', { text: (e.mod.capstone ? 'Capstone' : 'Module ' + e.mod.number) + ' · ' + (e.mod.capstone ? 'Task ' : 'Exercise ') + e.n }), badge(e.level), h('span', { class: 'sp' }), stateChip(e.id)),
-        h('p', { class: 'why-review', text: it.why }), h('p', { html: md(e.v[ds].task) })));
-    });
-    p.appendChild(list);
+
+  /* review first: what you found hardest, within the chosen difficulty */
+  var q = reviewQueue().filter(function (it) { return arena.level === 'All' || it.e.level === arena.level; });
+  if (q.length) {
+    p.appendChild(h('h2', { text: 'Review first' }));
+    p.appendChild(h('p', { class: 'muted', text: 'Exercises you have not solved, needed the solution or hints for, or solved a while ago.' }));
+    var rq = h('div', { class: 'stack' });
+    q.slice(0, 3).forEach(function (it) { rq.appendChild(arenaCard(it.e, arenaDs(it.e), it.why)); });
+    p.appendChild(rq);
   }
-  var done = ALL_EX.filter(function (e) { return isDone(e.id); });
+
+  /* all exercises, filtered */
+  var all = ALL_EX.filter(arenaMatches);
+  var head = h('div', { class: 'section-head' }, h('h2', { text: 'All exercises' }), h('span', { class: 'sp' }),
+    h('label', { class: 'arena-hide' }, h('input', { type: 'checkbox', checked: arena.hideSolved, onchange: function (ev) { arena.hideSolved = ev.target.checked; arena.shown = 12; route(true); } }), ' Hide solved'));
+  p.appendChild(head);
+  p.appendChild(h('p', { class: 'muted', role: 'status', text: all.length + ' exercise' + (all.length === 1 ? '' : 's') + (arena.level !== 'All' ? ' · ' + arena.level : '') + (arena.ds !== 'all' ? ' · ' + dsLabel(arena.ds) : ' · mixed datasets, each opens on a different one') + '.' }));
+  if (!all.length) {
+    p.appendChild(h('div', { class: 'res-empty' }, h('p', { text: 'No exercises match these filters.' }), h('button', { class: 'btn', type: 'button', text: 'Reset filters', onclick: arenaReset })));
+  } else {
+    var list = h('div', { class: 'stack' });
+    all.slice(0, arena.shown).forEach(function (e) { list.appendChild(arenaCard(e, arenaDs(e))); });
+    p.appendChild(list);
+    if (all.length > arena.shown) p.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', text: 'Show more (' + (all.length - arena.shown) + ' left)', onclick: function () { arena.shown += 12; route(true); } })));
+  }
+
+  /* mixed challenge: something you solved, on a different dataset */
+  var done = ALL_EX.filter(function (e) { return isDone(e.id) && (arena.level === 'All' || e.level === arena.level); });
   if (done.length) {
     p.appendChild(h('h2', { text: 'Mixed challenge' }));
     p.appendChild(h('p', { class: 'muted', text: 'Solve an exercise you already know on a different dataset. The skill is the same, but the tables, names and answers are new.' }));
     p.appendChild(h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', text: 'Give me a mixed challenge', onclick: function () {
-      var e = done[Math.floor(Math.random() * done.length)], others = ORDER.filter(function (d) { return d !== (S.progress[e.id] || {}).ds && d !== curDs(); });
-      setDs(others[Math.floor(Math.random() * others.length)] || curDs(), true);
+      var e = done[Math.floor(Math.random() * done.length)], pool = arena.ds === 'all' ? ORDER : [arena.ds];
+      var others = pool.filter(function (d) { return d !== (S.progress[e.id] || {}).ds; });
+      setDs((others.length ? others : pool)[Math.floor(Math.random() * (others.length || pool.length))], true);
       toast('Dataset: ' + dsLabel(curDs()));
       navigate(e.id);
     } })));
+  } else if (!started) {
+    p.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#' + MODS[0].id, text: 'New here? Start with the course' })));
   }
   return p;
 }

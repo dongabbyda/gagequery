@@ -678,3 +678,50 @@ def test_truncate_runs_with_a_note_and_foreign_keys_block_bad_rows(app):
     cells.nth(fk).locator("button:has-text('Run')").click()
     err = cells.nth(fk).locator('.err'); err.wait_for()
     assert 'FOREIGN KEY' in err.inner_text().upper()
+
+
+def test_practice_arena_filters_by_difficulty_and_dataset(app):
+    app.go('practice'); app.page.wait_for_selector('.arena-hero')
+    assert 'SQL Practice Arena' in app.page.inner_text('.arena-hero h1')
+    assert app.page.inner_text('.arena-hero select option:first-child') == 'All 6 datasets'
+    assert app.page.eval_on_selector_all('.arena-opt', 'els => els.map(e => e.textContent)') == ['All', 'Easy', 'Medium', 'Hard']
+    total = int(app.page.inner_text("[role=status]:has-text('exercises')").split()[0])
+    assert total == 80
+    app.page.click(".arena-opt:has-text('Hard')")
+    app.page.wait_for_selector(".arena-opt[aria-pressed=true]:has-text('Hard')")
+    hard = int(app.page.inner_text("[role=status]:has-text('exercise')").split()[0])
+    assert 0 < hard < total
+    levels = app.page.eval_on_selector_all('main .ex-card .badge', 'els => [...new Set(els.map(e => e.textContent.trim().toLowerCase()))]')
+    assert levels == ['hard']
+    app.page.select_option('#arena-ds', 'finance')
+    app.page.wait_for_selector("[role=status]:has-text('Harbor Microfinance Bank')")
+    assert set(app.page.eval_on_selector_all('main .ex-card .ds-chip', 'els => els.map(e => e.textContent.trim())')) == {'Finance'}
+    app.page.click("main .ex-card >> nth=0")                       # opening a card switches to that dataset
+    app.page.wait_for_selector('.task')
+    assert app.page.eval_on_selector('#ds-select', 'e => e.value') == 'finance'
+    assert app.real_errors() == []
+
+
+def test_practice_arena_mixed_datasets_show_variety_hide_solved_and_reset(app_factory):
+    done = ', '.join("'m00-e0%d': {state: 'solved', ds: 'sales', at: Date.now()}" % i for i in (1, 2, 3))
+    app = app_factory('practice', init_script=SEEDED % done)
+    app.page.wait_for_selector('.arena-hero')
+    chips = app.page.eval_on_selector_all('main .ex-card .ds-chip', 'els => [...new Set(els.map(e => e.textContent.trim()))]')
+    assert len(chips) >= 4, 'all datasets means a rotation across sectors'
+    before = int(app.page.inner_text("[role=status]:has-text('exercises')").split()[0])
+    app.page.check('.arena-hide input')
+    app.page.wait_for_selector("[role=status]:has-text('%d exercises')" % (before - 3))   # the three solved ones are hidden
+    app.page.click(".arena-opt:has-text('Easy')"); app.page.select_option('#arena-ds', 'politics')
+    app.page.click("button:has-text('Show more')")
+    assert app.page.locator('main .ex-card').count() > 12
+    app.page.click(".arena-opt:has-text('Medium')"); app.page.select_option('#arena-ds', 'sport')
+    app.page.click(".arena-opt:has-text('All')")
+    assert app.real_errors() == []
+
+
+def test_practice_arena_fits_a_phone(app_factory):
+    app = app_factory('practice', viewport=(390, 844))
+    app.page.wait_for_selector('.arena-hero')
+    assert app.page.evaluate('document.documentElement.scrollWidth') <= 390
+    box = app.page.query_selector('.arena-controls').bounding_box()
+    assert box['x'] >= 0 and box['x'] + box['width'] <= 390
