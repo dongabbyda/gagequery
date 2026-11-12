@@ -58,6 +58,10 @@ dict(level='Medium', concepts=['SUM', 'WHERE', 'GROUP BY'],
          ...))
 ```
 
+Extra practice lives in `content/more_a.py` (core modules) and `content/more_b.py` (window modules, dialect cards, and the
+Interview Practice module, `m16`). `scripts/build_content.py` appends these exercises after a module's original ones, so
+existing exercise ids never move. Add new exercises at the end of a module for the same reason.
+
 Every exercise needs all six datasets. Generate repetitive variants with a helper (see `IDX`/`SARG` in
 `m11_m12.py`) rather than copy-pasting.
 

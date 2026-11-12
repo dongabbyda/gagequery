@@ -5,7 +5,7 @@
 ```
 content/*.py + content/concepts.json ─┐
 datasets/*.sql ───────────────────────┼─► scripts/build_content.py ─► build/content.json
-                                      │        (verifies 1,032 queries)   build/verify_report.json
+                                      │        (verifies 1,212 queries)   build/verify_report.json
                                       │
 src/{head,shell}.html, logo.svg ──────┤
 src/app.js, src/engine.js ────────────┼─► scripts/assemble.py ─► dist/index.html (+ public/*)

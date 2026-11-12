@@ -98,6 +98,17 @@ def test_cleaning_exercise_requires_trim(app, solution):
     assert app.check(solution('m13', 1, 'finance'))[0] == 'ok'
 
 
+def test_interview_and_extra_practice_exercises_check(app, solution):
+    app.open_exercise('m16-e07', 'healthcare')                      # the median question
+    assert app.check(solution('m16', 7, 'healthcare'))[0] == 'ok'
+    app.open_exercise('m07-e08', 'finance')                         # percent of branch payroll
+    assert app.check(solution('m07', 8, 'finance'))[0] == 'ok'
+    app.open_exercise('m04-e08', 'politics')                        # LEFT JOIN with the filter in ON
+    assert app.check(solution('m04', 8, 'politics'))[0] == 'ok'
+    wrong = "SELECT p.party_name, COALESCE(SUM(r.votes), 0) AS total_votes FROM parties p LEFT JOIN candidates c ON c.party_id = p.party_id LEFT JOIN results r ON r.candidate_id = c.candidate_id WHERE r.election_id = 3 GROUP BY p.party_id, p.party_name ORDER BY total_votes DESC, p.party_name;"
+    assert app.check(wrong)[0] == 'no', 'a WHERE on the right-hand table drops the party with no votes'
+
+
 def test_capstone_task_checks(app, solution):
     app.open_exercise('m14-e05', 'healthcare')
     assert app.check(solution('m14', 5, 'healthcare'))[0] == 'ok'
@@ -643,6 +654,15 @@ def test_creating_tables_module_sits_second_and_shows_other_databases(app):
     assert app.real_errors() == []
 
 
+@pytest.mark.parametrize('mod,count,needle', [('m04', 3, 'full join'), ('m07', 2, 'distinct on'), ('m08', 3, 'datediff')])
+def test_join_and_window_modules_show_other_databases(app, mod, count, needle):
+    app.go(mod); app.page.wait_for_selector('.concept.dialect')
+    cards = app.page.locator('.concept.dialect')
+    assert cards.count() == count
+    assert needle in ' '.join(cards.all_inner_texts()).lower()
+    assert app.real_errors() == []
+
+
 @pytest.mark.parametrize('n,ds', [(1, 'sales'), (2, 'fashion'), (3, 'finance'), (4, 'healthcare'), (5, 'politics')])
 def test_creating_tables_exercises_accept_the_model_answer(app, solution, n, ds):
     app.open_exercise('m15-e0%d' % n, ds)
@@ -686,7 +706,7 @@ def test_practice_arena_filters_by_difficulty_and_dataset(app):
     assert app.page.inner_text('.arena-hero select option:first-child') == 'All 6 datasets'
     assert app.page.eval_on_selector_all('.arena-opt', 'els => els.map(e => e.textContent)') == ['All', 'Easy', 'Medium', 'Hard']
     total = int(app.page.inner_text("[role=status]:has-text('exercises')").split()[0])
-    assert total == 80
+    assert total == 108
     app.page.click(".arena-opt:has-text('Hard')")
     app.page.wait_for_selector(".arena-opt[aria-pressed=true]:has-text('Hard')")
     hard = int(app.page.inner_text("[role=status]:has-text('exercise')").split()[0])
@@ -709,13 +729,25 @@ def test_practice_arena_mixed_datasets_show_variety_hide_solved_and_reset(app_fa
     chips = app.page.eval_on_selector_all('main .ex-card .ds-chip', 'els => [...new Set(els.map(e => e.textContent.trim()))]')
     assert len(chips) >= 4, 'all datasets means a rotation across sectors'
     before = int(app.page.inner_text("[role=status]:has-text('exercises')").split()[0])
-    app.page.check('.arena-hide input')
+    app.page.check('.arena-hide:has-text("Hide solved") input')
     app.page.wait_for_selector("[role=status]:has-text('%d exercises')" % (before - 3))   # the three solved ones are hidden
     app.page.click(".arena-opt:has-text('Easy')"); app.page.select_option('#arena-ds', 'politics')
     app.page.click("button:has-text('Show more')")
     assert app.page.locator('main .ex-card').count() > 12
     app.page.click(".arena-opt:has-text('Medium')"); app.page.select_option('#arena-ds', 'sport')
     app.page.click(".arena-opt:has-text('All')")
+    assert app.real_errors() == []
+
+
+def test_practice_arena_interview_filter(app):
+    app.go('practice'); app.page.wait_for_selector('.arena-hero')
+    app.page.check('#arena-interview')
+    app.page.wait_for_selector("[role=status]:has-text('interview questions')")
+    assert int(app.page.inner_text("[role=status]:has-text('exercises')").split()[0]) == 7
+    names = app.page.eval_on_selector_all('main .ex-card .ex-top b', 'els => els.map(e => e.textContent)')
+    assert len(names) == 7 and len(set(n.split(' · ')[0] for n in names)) == 1, 'every card comes from the one interview module'
+    app.page.uncheck('#arena-interview')
+    app.page.wait_for_selector("[role=status]:has-text('108 exercises')")
     assert app.real_errors() == []
 
 

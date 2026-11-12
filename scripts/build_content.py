@@ -27,6 +27,17 @@ from content.m09_m10 import M9, M10
 from content.m11_m12 import M11, M12
 from content.m13_m14 import M13, M14
 from content.m15 import M15
+from content import more_a, more_b
+
+# Extra practice is appended after each module's original exercises, so existing exercise ids never move.
+for _m, _extra in ((M1, more_a.EXTRA_M01), (M2, more_a.EXTRA_M02), (M3, more_a.EXTRA_M03), (M4, more_a.EXTRA_M04), (M5, more_a.EXTRA_M05),
+                   (M7, more_b.EXTRA_M07), (M8, more_b.EXTRA_M08)):
+    _m['exercises'] = list(_m['exercises']) + _extra
+# "In other databases" cards for the join and window modules
+M4['dialects'] = more_b.DIALECTS_JOINS
+M7['dialects'] = more_b.DIALECTS_RANKING
+M8['dialects'] = more_b.DIALECTS_TIME
+M16 = more_b.M16
 
 DS = ['sales', 'sport', 'fashion', 'politics', 'finance', 'healthcare']
 META = {
@@ -197,7 +208,7 @@ def check_text(rules, sql):
 
 
 # Course order. Ids are permanent (progress, analytics and ratings use them); the number learners see is the position.
-COURSE = (M0, M1, M15, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M14)
+COURSE = (M0, M1, M15, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M16, M14)
 for number, mod in enumerate(COURSE):
     m = dict(id=mod['id'], number=number, phase=mod['phase'], title=mod['title'], minutes=mod['minutes'],
              objectives=mod['objectives'], concepts=concepts_for(mod), examples=[], exercises=[],
