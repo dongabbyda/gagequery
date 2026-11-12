@@ -3,7 +3,8 @@ import pytest
 
 pytestmark = pytest.mark.browser
 
-ROUTES = ['learn', 'm00', 'm01', 'm04', 'm06', 'm08', 'm10', 'm12', 'm13', 'm14', 'practice', 'playground', 'datasets', 'progress', 'about']
+ROUTES = ['learn', 'm00', 'm01', 'm04', 'm06', 'm08', 'm10', 'm12', 'm13', 'm14', 'practice', 'playground', 'progress', 'settings']
+PAGES_OUTSIDE_THE_RAIL = ['datasets', 'about', 'privacy', 'feedback']
 
 
 def test_loads_in_worker_without_errors(app):
@@ -18,10 +19,45 @@ def test_in_browser_selftest_runs_every_query(app):
     assert r['checked'] >= 700
 
 
+def test_sidebar_groups_modules_by_phase_and_opens_the_one_you_are_in(app):
+    phases = app.page.locator('#rail .rail-phase')
+    assert phases.count() == 4
+    assert [t.strip().splitlines()[0] for t in phases.all_inner_texts()] == ['Fundamentals', 'Intermediate', 'Advanced', 'Real-world']
+    assert app.page.locator('#rail .rail-phase[aria-expanded=true]').count() == 1, 'only the current phase starts open'
+    assert not app.page.locator('#rail a[data-route=m10]').is_visible()
+    phases.nth(2).click()                                            # opening a phase by hand
+    assert app.page.locator('#rail a[data-route=m10]').is_visible()
+    phases.nth(2).click()
+    assert not app.page.locator('#rail a[data-route=m10]').is_visible()
+    app.go('m12')                                                    # going to a module opens its phase
+    assert app.page.locator('#rail a[data-route=m12]').is_visible()
+    assert app.page.get_attribute('#rail a[data-route=m12]', 'aria-current') == 'page'
+    assert app.real_errors() == []
+
+
+def test_sidebar_footer_shows_level_and_opens_settings(app):
+    assert 'Level 1' in app.page.inner_text('#meter-level')
+    app.page.click('#rail a.rail-gear')
+    app.page.wait_for_selector("h1:has-text('Settings')")
+    assert app.page.get_attribute('#rail a.rail-gear', 'aria-current') == 'page'
+    tabs = app.page.eval_on_selector_all('.set-tabs .tab', 'els => els.map(e => e.textContent.trim())')
+    assert tabs == ['General', 'Privacy', 'Feedback', 'How it works']
+    app.page.click(".set-tabs .tab:has-text('How it works')")
+    app.page.wait_for_selector("h1:has-text('Real SQL')")
+    assert app.page.get_attribute('#rail a.rail-gear', 'aria-current') == 'page'
+    assert app.real_errors() == []
+
+
 def test_every_main_route_renders(app):
     for route in ROUTES:
+        closed = app.page.locator('#rail .rail-phase[aria-expanded=false]')
+        while closed.count():
+            closed.first.click()                                    # open every phase so each module link can be clicked
         app.page.click('#rail a[data-route=%s]' % route)
         app.page.wait_for_timeout(150)
+        assert app.page.inner_text('h1').strip(), route
+    for route in PAGES_OUTSIDE_THE_RAIL:
+        app.go(route)
         assert app.page.inner_text('h1').strip(), route
     assert app.page.locator('#rail a[data-route^=m]').count() >= 15
     assert app.real_errors() == []
@@ -156,19 +192,20 @@ def test_solving_the_last_exercise_completes_the_module(app_factory, solution):
     assert app.page.get_attribute('.fb.ok .btn.primary', 'href') == '#m01'
 
 
-def test_theme_switcher_cycles_system_light_dark_and_remembers(app_factory):
-    app = app_factory('home', color_scheme='dark')
+def test_theme_setting_switches_system_light_dark_and_remembers(app_factory):
+    app = app_factory('settings', color_scheme='dark')
     root = lambda: app.page.evaluate("document.documentElement.getAttribute('data-theme')")
     bg = lambda: app.page.evaluate("getComputedStyle(document.body).backgroundColor")
-    assert root() is None and 'Theme: System' in app.page.get_attribute('#theme-btn', 'aria-label')
+    pressed = lambda: app.page.eval_on_selector_all("[data-theme-opt][aria-pressed=true]", "els => els.map(e => e.dataset.themeOpt)")
+    assert root() is None and pressed() == ['system'] and app.page.locator('#theme-btn').count() == 0
     dark_bg = bg()
-    app.page.click('#theme-btn')
-    assert root() == 'light' and bg() != dark_bg
-    app.page.click('#theme-btn')
+    app.page.click("[data-theme-opt=light]")
+    assert root() == 'light' and bg() != dark_bg and pressed() == ['light']
+    app.page.click("[data-theme-opt=dark]")
     assert root() == 'dark' and bg() == dark_bg
     app.page.reload(); app.page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
-    assert root() == 'dark'
-    app.page.click('#theme-btn')
+    assert root() == 'dark' and pressed() == ['dark']
+    app.page.click("[data-theme-opt=system]")
     assert root() is None and app.page.evaluate("localStorage.getItem('gagequery-theme')") is None
 
 
@@ -199,7 +236,7 @@ def test_untrusted_saved_progress_is_cleaned(app_factory):
 
 
 def test_import_rejects_junk_and_keeps_only_known_entries(app):
-    app.go('progress')
+    app.go('settings')
     app.page.click("summary:has-text('Copy and paste instead')")
     app.page.fill('textarea.export', '{"progress": {"m01-e01": {"state": "solved", "ds": "sales", "at": 1}, "evil": {"state": "solved"}}, "days": {"x": 1}}')
     app.page.click("button:has-text('Import pasted text')")
@@ -215,7 +252,7 @@ def test_import_rejects_junk_and_keeps_only_known_entries(app):
 def test_progress_can_be_downloaded_and_imported_from_a_file(app_factory, tmp_path):
     seed = ("localStorage.setItem('gagequery-v1', JSON.stringify({v: 2, ds: 'sales', drafts: {}, hints: {'m01-e02@sales': 1}, helped: {}, days: {'2026-11-05': 2},"
             " reviewed: {}, progress: {'m00-e01': {state: 'solved', ds: 'sales', at: 5}, 'm00-e02': {state: 'attempted', ds: 'sales', at: 6}}}))")
-    a = app_factory('progress', init_script="if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); %s }" % seed)
+    a = app_factory('settings', init_script="if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); %s }" % seed)
     with a.page.expect_download() as dl:
         a.page.click("button:has-text('Download progress file')")
     name = dl.value.suggested_filename
@@ -225,7 +262,7 @@ def test_progress_can_be_downloaded_and_imported_from_a_file(app_factory, tmp_pa
     data = __import__('json').loads(path.read_text(encoding='utf-8'))
     assert data['app'] == 'gagequery' and sorted(data['progress']) == ['m00-e01', 'm00-e02']
 
-    b = app_factory('progress')                      # a different browser with nothing saved
+    b = app_factory('settings')                      # a different browser with nothing saved
     assert '0/' in b.page.inner_text('#meter-text')
     b.page.set_input_files("input[type=file]", str(path))
     b.page.wait_for_selector("#toasts:has-text('2 exercises restored')")
@@ -476,12 +513,12 @@ def test_google_analytics_after_allow_reports_routes_and_milestones_without_sql(
     ctx.close()
 
 
-def test_turning_google_analytics_off_on_my_progress_disables_it_and_removes_cookies(browser, base_url):
+def test_turning_google_analytics_off_in_settings_disables_it_and_removes_cookies(browser, base_url):
     ctx, page, google = ga_session(browser, base_url)
     page.click("#consent button:has-text('Accept all')")
     wait_until(page, 'window.__gtagLoaded === true')
     page.evaluate("document.cookie = '_ga=GA1.1.123.456; path=/'; document.cookie = '_ga_TEST=GS1.1.1; path=/'")
-    page.evaluate("location.hash = 'progress'"); page.wait_for_selector('#ch-ga:checked')
+    page.evaluate("location.hash = 'privacy'"); page.wait_for_selector('#ch-ga:checked')
     page.uncheck('#ch-ga'); page.click("main button:has-text('Save my choices')")
     assert page.evaluate("window['ga-disable-%s']" % GA_ID) is True
     assert '_ga' not in page.evaluate('document.cookie')
@@ -494,7 +531,7 @@ def test_no_google_analytics_banner_under_do_not_track_or_without_an_id(browser,
     ctx, page, google = ga_session(browser, base_url, extra_init="Object.defineProperty(navigator, 'doNotTrack', {get: () => '1'});")
     assert page.query_selector('#consent') is None and google == []
     ctx.close()
-    # the normal test build has no GA_MEASUREMENT_ID, so the app shows no banner and never mentions it on My progress
+    # the normal test build has no GA_MEASUREMENT_ID, so the app shows no banner and never mentions it in Settings
     ctx = browser.new_context(); page = ctx.new_page(); page.goto(base_url + '#progress')
     page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
     assert page.query_selector('#consent') is None and 'Privacy choices' not in page.inner_text('main')
@@ -579,8 +616,8 @@ def test_withdrawing_on_the_privacy_page_stops_counting_and_deletes_the_marker(b
 
 
 def test_privacy_notice_names_the_owner_contact_and_rights(app):
-    assert app.page.locator('#rail a[data-route=privacy]').count() == 1
     app.go('privacy'); app.page.wait_for_selector("h1:has-text('Privacy notice')")
+    assert app.page.inner_text('.set-tabs .tab[aria-selected=true]') == 'Privacy'
     text = app.page.inner_text('main')
     for needed in ('gagexplorerinc@gmail.com', 'GageQuery', 'Nigeria Data Protection Commission', 'GDPR', 'withdraw consent', '16 and over', 'Google', 'GoatCounter', 'never collect'):
         assert needed.lower() in text.lower(), needed
@@ -623,7 +660,8 @@ def test_rating_without_a_counter_is_only_saved_on_the_device(app_factory):
 
 def test_feedback_page_builds_an_email_about_the_right_exercise(app):
     from urllib.parse import unquote
-    assert app.page.locator('#rail a[data-route=feedback]').count() == 1
+    app.go('feedback'); app.page.wait_for_selector('.set-tabs')
+    assert app.page.inner_text('.set-tabs .tab[aria-selected=true]') == 'Feedback'
     app.open_exercise('m03-e02', 'sales')
     app.page.click(".task .report a:has-text('Tell us')")
     app.page.wait_for_selector('#fb-mail')

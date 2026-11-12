@@ -264,7 +264,7 @@ var Consent = (function () {
     b.appendChild(intro);
     document.body.appendChild(b);
   }
-  /* The same switches serve the banner, the Privacy page and My progress. Both start off unless already chosen. */
+  /* The same switches serve the banner and the Privacy page. Both start off unless already chosen. */
   function choices(onSave) {
     var c = record() || { counting: false, ga: false };
     var box = h('div', { class: 'choices' });
@@ -303,7 +303,7 @@ function viewPrivacy() {
   var S1 = [
     ['The short version', 'GageQuery is a free SQL course that runs in your browser. Your progress stays on your device. We do not ask for your name or email, and we never collect your SQL or answers. Two optional tools help us improve the course, and they run only if you say yes.'],
     ['Who is responsible', PRIVACY.owner + ' runs this site and decides how the optional tools are used. For any privacy question or request, email ' + PRIVACY.contact + '.'],
-    ['Stored on your device (necessary)', 'Your progress, drafts, hints, practice days, review times, chosen dataset, theme and these privacy choices are saved in your browser’s local storage. They are not cookies, they are never sent to us or anyone else, and the course cannot work without them. You can download, import or erase them on My progress, or by clearing this site’s data in your browser.'],
+    ['Stored on your device (necessary)', 'Your progress, drafts, hints, practice days, review times, chosen dataset, theme and these privacy choices are saved in your browser’s local storage. They are not cookies, they are never sent to us or anyone else, and the course cannot work without them. You can download, import or erase them in Settings, or by clearing this site’s data in your browser.'],
     ['Optional: visit counting (GoatCounter)', 'If you allow it, your browser sends GoatCounter (goatcounter.com) the page you open, its title, your screen size, the site you came from, and milestones such as "solved/m03-e02" or "module-complete/m04". GoatCounter uses your IP address and browser type briefly to avoid counting the same visit twice and, according to GoatCounter, never stores them. No cookies are used. We also save the date of your last visit on your device to tell new visitors from returning ones. Purpose: knowing how many people use the course and which lessons they reach. Legal basis: your consent.'],
     ['Optional: Google Analytics', 'If you allow it, Google Analytics records the pages you open, the exercises you solve, the modules you complete, your device and browser type and your approximate location, using Google cookies (_ga and _ga_*) for up to 13 months. Advertising features, Google signals and ad personalisation are off. Google stores the event data for 2 months. Purpose: understanding how learners move through the course and where they get stuck. Legal basis: your consent. The provider is Google (Google Ireland Limited for people in the EEA and UK, and Google LLC in the United States).'],
     ['Ratings and feedback', 'When you complete a module we ask for a star rating and, optionally, what would help most. Only if you click, the stars and your choice (for example "rating/m04/4") are sent to GoatCounter as an anonymous count, with no name, text or progress; this is separate from the optional tools above because you send it yourself. We remember on your device which modules you rated, so we do not ask twice. If you email us from the Feedback page, we receive your email address and message; we use them only to reply and to improve the course, keep them no longer than needed, and delete them on request.'],
@@ -797,37 +797,77 @@ function stateChip(id) {
 }
 function paintMeter() {
   var done = ALL_EX.filter(function (e) { var s = exState(e.id); return s === 'solved' || s === 'helped'; }).length;
-  var bar = $('#meter-bar'), txt = $('#meter-text');
+  var bar = $('#meter-bar'), txt = $('#meter-text'), lvl = $('#meter-level');
   if (bar) bar.style.width = (100 * done / ALL_EX.length) + '%';
   if (txt) txt.textContent = done + '/' + ALL_EX.length + ' solved \u00b7 ' + xp() + ' XP';
+  if (lvl) { var lv = level(); lvl.textContent = 'Level ' + lv.n + ' \u00b7 ' + lv.name; }
 }
+/* Sidebar: five main places, the modules grouped by phase (only the phase you are in is open), then level and Settings. */
+var PHASE_SHORT = { 1: 'Fundamentals', 2: 'Intermediate', 3: 'Advanced', 4: 'Real-world' };
+var railOpen = {}, railRevealed = null;
+function ico(path) { return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + path + '</svg>'; }
+var RI = {
+  home: ico('<path d="M2.5 7.5 8 3l5.5 4.5V13a.5.5 0 0 1-.5.5H9.5V10h-3v3.5H3a.5.5 0 0 1-.5-.5z"/>'),
+  course: ico('<path d="M2 3.5 6 2l4 1.5L14 2v10.5L10 14l-4-1.5L2 14zM6 2v10.5M10 3.5V14"/>'),
+  practice: ico('<circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.4"/>'),
+  playground: ico('<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10.5H11"/>'),
+  progress: ico('<path d="M3 13V8M8 13V3M13 13V6"/>'),
+  gear: ico('<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/>'),
+  chev: ico('<path d="M6 4l4 4-4 4"/>'),
+  check: ico('<path d="M3.5 8.5l3 3 6-7"/>')
+};
+function routeMod() { var m = /^(m\d\d)/.exec(currentRoute()); return m && MOD_BY_ID[m[1]] ? MOD_BY_ID[m[1]] : null; }
+function defaultPhase() {
+  var cur = routeMod();
+  if (cur) return cur.phase;
+  var next = MODS.filter(function (m) { return modDone(m) < m.exercises.length; })[0];
+  return next ? next.phase : 1;
+}
+function phaseOpen(ph) { return railOpen[ph] === undefined ? ph === defaultPhase() : railOpen[ph]; }
 function paintRail() {
   if (!rail) return;
+  var old = rail.querySelector('.rail-scroll'), keep = old ? old.scrollTop : 0;
   rail.innerHTML = '';
-  function link(id, label, right, cls) { var a = h('a', { href: '#' + id, 'data-route': id, class: cls || '' }, label); if (right) a.appendChild(right); return a; }
-  rail.appendChild(h('div', { class: 'rail-sec', text: 'Start' }));
-  rail.appendChild(link('home', 'Home'));
-  rail.appendChild(link('learn', 'Course map'));
-  rail.appendChild(link('datasets', 'Datasets'));
-  var lastPhase = 0;
-  MODS.forEach(function (m) {
-    if (m.phase !== lastPhase) { rail.appendChild(h('div', { class: 'rail-sec', text: PHASES[m.phase] })); lastPhase = m.phase; }
-    var n = modDone(m);
-    rail.appendChild(link(m.id, h('span', { class: 'rl' }, h('b', { text: m.capstone ? '★' : m.number }), h('span', { text: SHORT[m.id] || m.title.split(':')[0] })), h('span', { class: 'cnt' + (n === m.exercises.length ? ' full' : ''), text: (n === m.exercises.length ? '✓ ' : '') + n + '/' + m.exercises.length })));
+  var sc = h('div', { class: 'rail-scroll' });
+  function link(id, icon, label) { return h('a', { href: '#' + id, 'data-route': id }, h('span', { class: 'ic', html: RI[icon] }), h('span', { class: 'nm', text: label })); }
+  sc.appendChild(link('home', 'home', 'Home'));
+  sc.appendChild(link('learn', 'course', 'Course'));
+  sc.appendChild(link('practice', 'practice', 'Practice arena'));
+  sc.appendChild(link('playground', 'playground', 'Playground'));
+  sc.appendChild(link('progress', 'progress', 'My progress'));
+  [1, 2, 3, 4].forEach(function (ph) {
+    var mods = MODS.filter(function (m) { return m.phase === ph; });
+    if (!mods.length) return;
+    var open = phaseOpen(ph), id = 'rail-ph' + ph, list = h('div', { class: 'rail-mods', id: id });
+    if (!open) list.hidden = true;
+    var btn = h('button', { type: 'button', class: 'rail-phase', 'aria-expanded': open ? 'true' : 'false', 'aria-controls': id },
+      h('span', { class: 'chev', html: RI.chev }), h('span', { text: PHASE_SHORT[ph] }),
+      h('span', { class: 'n', text: mods.filter(modComplete).length + '/' + mods.length }));
+    btn.addEventListener('click', function () { var now = !phaseOpen(ph); railOpen[ph] = now; btn.setAttribute('aria-expanded', now ? 'true' : 'false'); list.hidden = !now; });
+    mods.forEach(function (m) {
+      var n = modDone(m), tot = m.exercises.length;
+      var a = h('a', { href: '#' + m.id, 'data-route': m.id }, h('b', { class: 'num', text: m.capstone ? '\u2605' : m.number }), h('span', { class: 'nm', text: SHORT[m.id] || m.title.split(':')[0] }));
+      if (n === tot) a.appendChild(h('span', { class: 'st done', role: 'img', 'aria-label': 'Completed', html: RI.check }));
+      else if (n > 0) a.appendChild(h('span', { class: 'st part', role: 'img', 'aria-label': n + ' of ' + tot + ' solved', style: '--p:' + Math.round(100 * n / tot) }));
+      list.appendChild(a);
+    });
+    sc.appendChild(h('div', { class: 'rail-group' }, btn, list));
   });
-  rail.appendChild(h('div', { class: 'rail-sec', text: 'Practice' }));
-  rail.appendChild(link('practice', 'Practice arena'));
-  rail.appendChild(link('playground', 'Playground'));
-  rail.appendChild(link('progress', 'My progress'));
-  rail.appendChild(link('about', 'How it works'));
-  rail.appendChild(link('feedback', 'Feedback'));
-  rail.appendChild(link('privacy', 'Privacy'));
-  markRail();
+  rail.appendChild(sc);
+  rail.appendChild(h('div', { class: 'rail-foot' },
+    h('a', { class: 'rail-me', href: '#progress', 'aria-label': 'Your level and progress' }, h('b', { id: 'meter-level' }), h('span', { class: 'bar' }, h('i', { id: 'meter-bar' })), h('small', { id: 'meter-text' })),
+    h('a', { class: 'rail-gear', href: '#settings', 'data-route': 'settings', 'aria-label': 'Settings', title: 'Settings' }, h('span', { class: 'ic', html: RI.gear }))));
+  sc.scrollTop = keep;
+  markRail(); paintMeter();
 }
+var SETTINGS_ROUTES = { settings: 1, privacy: 1, feedback: 1, about: 1 };
 function markRail() {
   if (!rail) return;
   var r = currentRoute(), base = r.split('-')[0];
-  Array.prototype.forEach.call(rail.querySelectorAll('a'), function (a) { var id = a.getAttribute('data-route'); if (id === r || (id === base && /^m\d\d$/.test(base))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  Array.prototype.forEach.call(rail.querySelectorAll('a[data-route]'), function (a) {
+    var id = a.getAttribute('data-route');
+    if (id === r || (id === base && /^m\d\d$/.test(base)) || (id === 'settings' && SETTINGS_ROUTES[r])) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
 }
 
 /* ================================================================ dataset switcher */
@@ -1507,6 +1547,31 @@ function viewProgress() {
   if (touched.length) p.appendChild(masteryRows(touched));
   else p.appendChild(h('p', { class: 'muted', text: 'Concepts appear here as you attempt exercises that use them.' }));
   p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Show all ' + list.length + ' concepts in the course' }), masteryRows(list)));
+  p.appendChild(h('p', { class: 'muted', html: 'Progress is saved in this browser only. Back it up, restore it or reset it in <a href="#settings">Settings</a>.' }));
+  return p;
+}
+
+/* ================================================================ settings */
+var SET_TABS = [['settings', 'General'], ['privacy', 'Privacy'], ['feedback', 'Feedback'], ['about', 'How it works']];
+function withSettingsTabs(pg, active) {
+  var tabs = h('div', { class: 'tabs set-tabs', role: 'tablist', 'aria-label': 'Settings sections' });
+  SET_TABS.forEach(function (t) { tabs.appendChild(h('a', { class: 'tab', role: 'tab', href: '#' + t[0], 'aria-selected': t[0] === active ? 'true' : 'false', text: t[1] })); });
+  pg.insertBefore(tabs, pg.firstChild);
+  return pg;
+}
+function viewSettings() {
+  var p = page('prose');
+  p.appendChild(h('div', { class: 'eyebrow', text: 'Settings' }));
+  p.appendChild(h('h1', { text: 'Settings' }));
+  p.appendChild(h('h2', { text: 'Appearance' }));
+  p.appendChild(h('p', { class: 'muted', text: 'Choose how GageQuery looks. System follows the setting on your device.' }));
+  p.appendChild(themeControl());
+  dataSection(p);
+  return withSettingsTabs(p, 'settings');
+}
+
+/* Back up, restore or reset progress. Lives in Settings. */
+function dataSection(p) {
   p.appendChild(h('h2', { text: 'Your data' }));
   p.appendChild(h('p', { class: 'muted', text: 'Progress is saved in this browser only, so clearing site data erases it. Download a backup file now and then, and import it to restore your progress or move it to another browser or device. Importing replaces the progress here, and you can undo it.' }));
   var fileInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true, 'aria-label': 'Choose a GageQuery progress file' });
@@ -1525,13 +1590,7 @@ function viewProgress() {
   var armed = false, clearBtn = h('button', { class: 'btn ghost', type: 'button', text: 'Reset all progress', onclick: function () { if (!armed) { armed = true; clearBtn.textContent = 'Click again to erase everything'; return; } S.progress = {}; S.helped = {}; S.hints = {}; S.drafts = {}; S.days = {}; S.reviewed = {}; save(); toast('Progress erased.'); route(true); } });
   p.appendChild(h('div', { class: 'actions' }, downloadBtn, uploadBtn, fileInput));
   p.appendChild(h('details', { class: 'all-concepts' }, h('summary', { text: 'Copy and paste instead' }), area, h('div', { class: 'actions' }, exportBtn, importBtn)));
-  if (Consent.relevant()) {
-    p.appendChild(h('h2', { text: 'Privacy choices' }));
-    p.appendChild(h('p', { class: 'muted', html: 'Optional visit counting and Google Analytics run only if you allow them. <a href="#privacy">Read the privacy notice</a>.' }));
-    p.appendChild(Consent.choices(function () { toast('Your choices are saved.'); route(true); }));
-  }
   p.appendChild(h('div', { class: 'actions' }, clearBtn));
-  return p;
 }
 
 /* Progress backup: the same text can be downloaded as a file, copied, or imported back from either. */
@@ -1583,7 +1642,7 @@ function viewAbout() {
 function openPalette() {
   var dlg = $('#palette'); dlg.hidden = false;
   var input = $('#pal-input'), list = $('#pal-list'); input.value = ''; render(); input.focus();
-  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['Feedback', 'feedback'], ['Privacy', 'privacy'], ['How it works', 'about']];
+  var items = [['Home', 'home'], ['Course map', 'learn'], ['Datasets', 'datasets'], ['Practice arena', 'practice'], ['Playground', 'playground'], ['My progress', 'progress'], ['Settings', 'settings'], ['Feedback', 'feedback'], ['Privacy', 'privacy'], ['How it works', 'about']];
   MODS.forEach(function (m) { items.push(['Module ' + m.number + ': ' + m.title, m.id]); m.exercises.forEach(function (e) { items.push(['M' + m.number + ' Exercise ' + e.n + ' (' + e.level + '): ' + e.v[curDs()].task.slice(0, 70), e.id]); }); });
   ORDER.forEach(function (d) { items.push(['Use dataset: ' + dsLabel(d), 'ds:' + d]); });
   var sel = 0, shown = [];
@@ -1618,18 +1677,21 @@ function route(keepScroll) {
   else if (r === 'datasets') pg = viewDatasets();
   else if (r === 'progress') pg = viewProgress();
   else if (r === 'practice') pg = viewPractice();
-  else if (r === 'privacy') pg = viewPrivacy();
-  else if (r === 'feedback') pg = viewFeedback();
-  else if (r === 'about') pg = viewAbout();
+  else if (r === 'settings') pg = viewSettings();
+  else if (r === 'privacy') pg = withSettingsTabs(viewPrivacy(), 'privacy');
+  else if (r === 'feedback') pg = withSettingsTabs(viewFeedback(), 'feedback');
+  else if (r === 'about') pg = withSettingsTabs(viewAbout(), 'about');
   else if ((m = /^(m\d\d)(?:-(concepts|examples|exercises))?$/.exec(r)) && MOD_BY_ID[m[1]]) pg = viewModule(MOD_BY_ID[m[1]], m[2]);
   else if (EX_BY_ID[r]) pg = viewExercise(EX_BY_ID[r]);
   else pg = viewHome();
   main.innerHTML = ''; main.appendChild(pg); currentPage = pg;
+  var cm = routeMod();
+  if (cm && cm.id !== railRevealed) { railRevealed = cm.id; if (railOpen[cm.phase] !== true) { railOpen[cm.phase] = true; paintRail(); } }
   markRail();
   closeRail();
   window.scrollTo(0, keepScroll === true ? y : 0);
   var h1 = pg.querySelector('h1'); document.title = (h1 ? h1.textContent + ' \u00b7 ' : '') + 'GageQuery';
-  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|about|privacy|feedback)$/.test(r) ? r : 'home';
+  var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|settings|about|privacy|feedback)$/.test(r) ? r : 'home';
   Analytics.page(counted, document.title);
   GA.page(counted, document.title);
 }
@@ -1647,14 +1709,16 @@ function applyTheme(t) {
   var root = document.documentElement;
   if (t === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
   try { if (t === 'system') localStorage.removeItem('gagequery-theme'); else localStorage.setItem('gagequery-theme', t); } catch (e) {}
-  var next = THEMES[(THEMES.indexOf(t) + 1) % THEMES.length], btn = $('#theme-btn');
-  $('#theme-ico').innerHTML = THEME_ICON[t]; $('#theme-txt').textContent = THEME_LABEL[t];
-  btn.setAttribute('aria-label', 'Theme: ' + THEME_LABEL[t] + '. Switch to ' + THEME_LABEL[next].toLowerCase() + '.');
-  btn.title = 'Theme: ' + THEME_LABEL[t] + (t === 'system' ? ' (follows your device)' : '') + '. Click for ' + THEME_LABEL[next].toLowerCase() + '.';
+  Array.prototype.forEach.call(document.querySelectorAll('[data-theme-opt]'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-theme-opt') === t ? 'true' : 'false'); });
 }
-function initTheme() {
-  applyTheme(themePref());
-  $('#theme-btn').addEventListener('click', function () { var t = themePref(); applyTheme(THEMES[(THEMES.indexOf(t) + 1) % THEMES.length]); });
+function initTheme() { applyTheme(themePref()); }
+function themeControl() {
+  var seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Theme' }), cur = themePref();
+  THEMES.forEach(function (t) {
+    seg.appendChild(h('button', { type: 'button', 'data-theme-opt': t, 'aria-pressed': cur === t ? 'true' : 'false', onclick: function () { applyTheme(t); } },
+      h('span', { class: 'ico', 'aria-hidden': 'true', html: THEME_ICON[t] }), THEME_LABEL[t]));
+  });
+  return seg;
 }
 
 /* ================================================================ boot */
@@ -1685,7 +1749,7 @@ function boot() {
   paintRail(); paintMeter();
   setDs(curDs(), true);
   route();
-  Engine.open(curDs()).then(function () { $('#engine').classList.add('ready'); $('#engine').textContent = 'Engine ready'; }).catch(engineProblem);
+  Engine.open(curDs()).then(function () { var en = $('#engine'); en.classList.add('ready'); en.textContent = 'Engine ready'; en.title = 'Engine ready'; }).catch(engineProblem);
 }
 /* If the SQL engine cannot start anywhere, say so in plain words and give the learner something to send back. */
 function engineProblem(err) {
