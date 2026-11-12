@@ -109,6 +109,7 @@ var BADGES = [
   { id: 'joins', name: 'Join builder', how: 'Solve every exercise in ' + modsText(['m04']) + '.', test: function () { return allDone(['m04']); } },
   { id: 'windows', name: 'Window wizard', how: 'Solve every exercise in ' + modsText(['m07', 'm08']) + '.', test: function () { return allDone(['m07', 'm08']); } },
   { id: 'cleaner', name: 'Data cleaner', how: 'Solve every exercise in ' + modsText(['m13']) + '.', test: function () { return allDone(['m13']); } },
+  { id: 'interview', name: 'Interview ready', how: 'Solve every exercise in ' + modsText(['m16']) + '.', test: function () { return allDone(['m16']); } },
   { id: 'capstone', name: 'Business reviewer', how: 'Solve every capstone task.', test: function () { return allDone(['m14']); } },
   { id: 'datasets', name: 'Sector hopper', how: 'Solve exercises on three different datasets.', test: function () { var u = {}; ALL_EX.forEach(function (e) { if (isDone(e.id)) u[S.progress[e.id].ds] = 1; }); return Object.keys(u).length >= 3; } },
   { id: 'streak', name: 'Seven-day streak', how: 'Practise on 7 days in a row.', test: function () { return streaks().best >= 7; } },
@@ -787,7 +788,7 @@ function defs() { return '<defs><marker id="qc-arrow" viewBox="0 0 10 10" refX="
 var PHASES = {1: 'Phase 1 \u00b7 Fundamentals', 2: 'Phase 2 \u00b7 Intermediate SQL and analytics', 3: 'Phase 3 \u00b7 Advanced SQL and optimisation', 4: 'Phase 4 \u00b7 Real-world analysis'};
 var SHORT = { m00: 'Start here', m01: 'Getting started', m15: 'Creating tables', m02: 'Cleaning up results', m03: 'Summarising data', m04: 'Joins', m05: 'Subqueries',
   m06: 'CTEs and set operations', m07: 'Ranking windows', m08: 'Time-series windows', m09: 'Pivots, dates, strings', m10: 'Views and procedures',
-  m11: 'Indexes and tuning', m12: 'Transactions', m13: 'Data cleaning', m14: 'Capstone' };   // keyed by id: numbers come from course order
+  m11: 'Indexes and tuning', m12: 'Transactions', m13: 'Data cleaning', m16: 'Interview practice', m14: 'Capstone' };   // keyed by id: numbers come from course order
 var rail, main, routeId = null;
 function badge(level) { return h('span', { class: 'badge ' + level.toLowerCase(), text: level }); }
 function stateChip(id) {
@@ -1317,7 +1318,7 @@ function levelCard(lv) {
 }
 
 var SKILLS = [['Basics', ['m00', 'm01', 'm02']], ['Aggregation', ['m03']], ['Joins', ['m04']], ['Subqueries and CTEs', ['m05', 'm06']],
-  ['Window functions', ['m07', 'm08']], ['Dates, text, pivots', ['m09']], ['Design and tuning', ['m10', 'm11', 'm12']], ['Data cleaning', ['m13']]];
+  ['Window functions', ['m07', 'm08']], ['Dates, text, pivots', ['m09']], ['Design and tuning', ['m10', 'm11', 'm12']], ['Data cleaning', ['m13']], ['Interview skills', ['m16']]];
 function skillScores() {
   return SKILLS.map(function (s) {
     var t = 0, n = 0;
@@ -1363,15 +1364,15 @@ function reviewQueue() {
   return items.sort(function (a, b) { return b.w - a.w || a.t - b.t || ALL_EX.indexOf(a.e) - ALL_EX.indexOf(b.e); });
 }
 /* Practice arena: filter every exercise by difficulty and dataset and practise freely. Filters last for the visit only. */
-var arena = { level: 'All', ds: 'all', hideSolved: false, shown: 12 };
+var arena = { level: 'All', ds: 'all', hideSolved: false, interview: false, shown: 12 };
 var ARENA_ICON = {
   filter: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5V13l-3-1.5V8.5z"/></svg>',
   db: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="3.5" rx="5" ry="2"/><path d="M3 3.5v9c0 1.1 2.2 2 5 2s5-.9 5-2v-9M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>'
 };
 /* The dataset an exercise opens on: the chosen one, or (for "all datasets") a rotation so practice stays varied. */
 function arenaDs(e) { return arena.ds === 'all' ? ORDER[ALL_EX.indexOf(e) % ORDER.length] : arena.ds; }
-function arenaMatches(e) { return (arena.level === 'All' || e.level === arena.level) && !(arena.hideSolved && isDone(e.id)); }
-function arenaReset() { arena.level = 'All'; arena.ds = 'all'; arena.hideSolved = false; arena.shown = 12; route(true); }
+function arenaMatches(e) { return (arena.level === 'All' || e.level === arena.level) && (!arena.interview || e.mod.id === 'm16') && !(arena.hideSolved && isDone(e.id)); }
+function arenaReset() { arena.level = 'All'; arena.ds = 'all'; arena.hideSolved = false; arena.interview = false; arena.shown = 12; route(true); }
 
 function arenaCard(e, ds, why) {
   var d = DSETS[ds];
@@ -1410,7 +1411,7 @@ function viewPractice() {
     h('div', null, h('b', { text: level().name }), h('span', { text: xp() + ' XP' }))));
 
   /* review first: what you found hardest, within the chosen difficulty */
-  var q = reviewQueue().filter(function (it) { return arena.level === 'All' || it.e.level === arena.level; });
+  var q = reviewQueue().filter(function (it) { return (arena.level === 'All' || it.e.level === arena.level) && (!arena.interview || it.e.mod.id === 'm16'); });
   if (q.length) {
     p.appendChild(h('h2', { text: 'Review first' }));
     p.appendChild(h('p', { class: 'muted', text: 'Exercises you have not solved, needed the solution or hints for, or solved a while ago.' }));
@@ -1422,9 +1423,10 @@ function viewPractice() {
   /* all exercises, filtered */
   var all = ALL_EX.filter(arenaMatches);
   var head = h('div', { class: 'section-head' }, h('h2', { text: 'All exercises' }), h('span', { class: 'sp' }),
+    h('label', { class: 'arena-hide' }, h('input', { type: 'checkbox', id: 'arena-interview', checked: arena.interview, onchange: function (ev) { arena.interview = ev.target.checked; arena.shown = 12; route(true); } }), ' Interview questions only'),
     h('label', { class: 'arena-hide' }, h('input', { type: 'checkbox', checked: arena.hideSolved, onchange: function (ev) { arena.hideSolved = ev.target.checked; arena.shown = 12; route(true); } }), ' Hide solved'));
   p.appendChild(head);
-  p.appendChild(h('p', { class: 'muted', role: 'status', text: all.length + ' exercise' + (all.length === 1 ? '' : 's') + (arena.level !== 'All' ? ' · ' + arena.level : '') + (arena.ds !== 'all' ? ' · ' + dsLabel(arena.ds) : ' · mixed datasets, each opens on a different one') + '.' }));
+  p.appendChild(h('p', { class: 'muted', role: 'status', text: all.length + ' exercise' + (all.length === 1 ? '' : 's') + (arena.interview ? ' · interview questions' : '') + (arena.level !== 'All' ? ' · ' + arena.level : '') + (arena.ds !== 'all' ? ' · ' + dsLabel(arena.ds) : ' · mixed datasets, each opens on a different one') + '.' }));
   if (!all.length) {
     p.appendChild(h('div', { class: 'res-empty' }, h('p', { text: 'No exercises match these filters.' }), h('button', { class: 'btn', type: 'button', text: 'Reset filters', onclick: arenaReset })));
   } else {
@@ -1435,7 +1437,7 @@ function viewPractice() {
   }
 
   /* mixed challenge: something you solved, on a different dataset */
-  var done = ALL_EX.filter(function (e) { return isDone(e.id) && (arena.level === 'All' || e.level === arena.level); });
+  var done = ALL_EX.filter(function (e) { return isDone(e.id) && (arena.level === 'All' || e.level === arena.level) && (!arena.interview || e.mod.id === 'm16'); });
   if (done.length) {
     p.appendChild(h('h2', { text: 'Mixed challenge' }));
     p.appendChild(h('p', { class: 'muted', text: 'Solve an exercise you already know on a different dataset. The skill is the same, but the tables, names and answers are new.' }));

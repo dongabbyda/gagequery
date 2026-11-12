@@ -9,7 +9,7 @@ DATASETS = ['sales', 'sport', 'fashion', 'politics', 'finance', 'healthcare']
 def test_every_query_verified():
     report = json.load(open(need(os.path.join(BUILD, 'verify_report.json')), encoding='utf-8'))
     assert report['problems'] == [], '\n'.join(report['problems'])
-    assert report['modules'] == 16 and report['datasets'] == len(DATASETS)
+    assert report["modules"] == 17 and report['datasets'] == len(DATASETS)
     assert report['queries_checked'] == (report['examples'] + report['exercises']) * len(DATASETS)
 
 
