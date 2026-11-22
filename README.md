@@ -45,6 +45,8 @@ More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`docs/CONTENT_GUIDE.md`
 
 ## Deploying
 
+The live site is on Cloudflare Pages at `gagequery.pages.dev`; it builds from `main`. (The old GitHub Pages deploy was retired.)
+
 `dist/` is a static site. Any static host works; hosts that read `_headers` (Cloudflare Pages, Netlify) also
 apply the security headers in `public/_headers`.
 
