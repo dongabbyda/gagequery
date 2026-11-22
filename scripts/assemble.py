@@ -111,10 +111,10 @@ def main():
         path = os.path.join(DIST, name)
         shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
     shutil.copytree(PUBLIC, DIST, dirs_exist_ok=True)
-    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() + analytics_meta() + ga_meta() +
+    page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' + csp_meta() + analytics_meta() + ga_meta() + '<meta name="gagequery-routing" content="paths">\n' +
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
             '<meta name="description" content="GageQuery: learn SQL by doing. From your first query to a capstone business review on six real-world datasets, every answer checked in your browser.">\n'
-            '<link rel="icon" href="favicon.svg" type="image/svg+xml">\n'
+            '<link rel="icon" href="/favicon.svg" type="image/svg+xml">\n'
             + head + '\n</head>\n<body>' + body + '</body>\n</html>\n')
     open(os.path.join(DIST, 'index.html'), 'w', encoding='utf-8').write(page)
     print('dist/index.html %d KB; build/gagequery.artifact.html %d KB' % (len(page.encode()) // 1024, len(frag.encode()) // 1024))

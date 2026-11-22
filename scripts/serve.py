@@ -3,7 +3,7 @@
 
 Usage: python3 scripts/serve.py [port]      default port 8000
 """
-import functools, http.server, os, socketserver, sys, threading
+import functools, http.server, os, socketserver, sys, threading, urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, 'dist')
@@ -23,6 +23,13 @@ HEADERS = load_headers()
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def send_head(self):
+        # Like Cloudflare Pages and Netlify: a path that is not a file (no extension) gets the app, so /joins/exercise-3 works on reload.
+        path = urllib.parse.urlsplit(self.path).path
+        if path != '/' and '.' not in path.rstrip('/').rsplit('/', 1)[-1]:
+            self.path = '/index.html'
+        return super().send_head()
+
     def end_headers(self):
         for k, v in HEADERS:
             self.send_header(k, v)
