@@ -50,11 +50,13 @@ apply the security headers in `public/_headers`.
 
 | Host | Build command | Output folder |
 |---|---|---|
-| Cloudflare Pages | `npm run build` | `dist` |
+| Cloudflare Pages | `pip install pysqlite3-binary && npm ci && npm run build` | `dist` |
 | Netlify | `npm run build` (already in `netlify.toml`) | `dist` |
 | Anything else | build locally or in CI, upload `dist/` | — |
 
-The build needs Python 3 on the build machine. The page is ~3.5 MB uncompressed and ~740 KB gzipped; hosts
+The build needs Python 3 on the build machine, linked to SQLite 3.39 or newer. Cloudflare's build image has an older
+SQLite, so its build command installs `pysqlite3-binary` first (the build uses it automatically when needed). Set
+`NODE_VERSION`, `PYTHON_VERSION`, `GOATCOUNTER_URL` and `GA_MEASUREMENT_ID` as build variables there. The page is ~3.5 MB uncompressed and ~740 KB gzipped; hosts
 compress it automatically.
 
 The same build also writes `build/gagequery.artifact.html`, a fragment that can be published as a claude.ai Artifact.
