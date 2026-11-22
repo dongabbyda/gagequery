@@ -15,8 +15,14 @@ OUT = os.path.join(ROOT, 'build')
 sys.path.insert(0, ROOT)
 
 # Window functions, RIGHT/FULL JOIN and the shims below need a recent SQLite (sql.js 1.10.3 ships 3.45).
+# Some build hosts (Cloudflare Pages) link Python to an older SQLite; pysqlite3-binary brings a current one.
 if sqlite3.sqlite_version_info < (3, 39, 0):
-    sys.exit('GageQuery needs Python linked to SQLite 3.39 or newer; found %s.' % sqlite3.sqlite_version)
+    try:
+        import pysqlite3 as sqlite3
+    except ImportError:
+        pass
+if sqlite3.sqlite_version_info < (3, 39, 0):
+    sys.exit('GageQuery needs Python linked to SQLite 3.39 or newer; found %s. Try: pip install pysqlite3-binary' % sqlite3.sqlite_version)
 
 from content.m00 import M0
 from content.m01_m02 import M1, M2
