@@ -48,6 +48,68 @@ def test_sidebar_footer_shows_level_and_opens_settings(app):
     assert app.real_errors() == []
 
 
+def open_path(browser, base_url, path, **ctx):
+    c = browser.new_context(viewport={'width': 1400, 'height': 900}, **ctx)
+    page = c.new_page()
+    errors = []
+    page.on('pageerror', lambda e: errors.append(str(e)))
+    page.goto(base_url + path)
+    page.wait_for_selector('#engine.ready', state='attached', timeout=60000)
+    return c, page, errors
+
+
+def test_every_page_has_a_real_path_that_survives_reload_and_back(browser, base_url):
+    c, page, errors = open_path(browser, base_url, 'summarising-data/exercise-1')
+    page.wait_for_selector('.task')
+    assert page.evaluate('location.pathname') == '/summarising-data/exercise-1'
+    assert 'Count the products in each category' in page.inner_text('.task')
+    page.reload(); page.wait_for_selector('.task')                          # a refresh keeps the page
+    assert page.evaluate('location.pathname') == '/summarising-data/exercise-1'
+    page.click("nav.crumbs a:has-text('Course map')"); page.wait_for_selector('.mod-card')
+    assert page.evaluate('location.pathname') == '/course'
+    page.go_back(); page.wait_for_selector('.task')                         # the browser's back button works
+    assert page.evaluate('location.pathname') == '/summarising-data/exercise-1'
+    page.go_forward(); page.wait_for_selector('.mod-card')
+    hrefs = page.eval_on_selector_all('.mod-card', 'els => els.map(e => e.getAttribute("href"))')
+    assert '/joins' in hrefs and not any(h.startswith('#') for h in hrefs), 'links are real paths, not hashes'
+    assert page.get_attribute('#rail a[data-route=m04]', 'href') == '/joins'
+    assert page.get_attribute('#rail a.rail-gear', 'href') == '/settings'
+    assert errors == []
+    c.close()
+
+
+@pytest.mark.parametrize('path,heading', [('course', 'From your first query'), ('settings/privacy', 'Privacy notice'), ('settings/how-it-works', 'Real SQL'),
+                                          ('capstone/task-2', ''), ('joins/examples', 'Combining Tables'), ('practice', 'SQL Practice Arena')])
+def test_deep_links_open_the_right_page(browser, base_url, path, heading):
+    c, page, errors = open_path(browser, base_url, path)
+    page.wait_for_selector('main h1, .task')
+    assert page.query_selector('.task') if not heading else heading in page.inner_text('main h1')
+    assert page.evaluate('location.pathname') == '/' + path
+    assert errors == []
+    c.close()
+
+
+def test_old_hash_links_become_real_paths(browser, base_url):
+    c, page, errors = open_path(browser, base_url, '#m03-e01')
+    page.wait_for_selector('.task')
+    assert page.evaluate('location.pathname + location.hash') == '/summarising-data/exercise-1'
+    page.evaluate("location.hash = 'privacy'"); page.wait_for_selector("h1:has-text('Privacy notice')")
+    assert page.evaluate('location.pathname') == '/settings/privacy'
+    assert errors == []
+    c.close()
+
+
+def test_unknown_address_shows_a_friendly_page_and_links_home(browser, base_url):
+    c, page, errors = open_path(browser, base_url, 'no/such/page')
+    page.wait_for_selector("h1:has-text('We could not find that page')")
+    page.click("main a:has-text('Go to the home page')")
+    page.wait_for_selector('main h1')
+    assert 'Learn SQL' in page.inner_text('main h1') or 'Welcome' in page.inner_text('main h1')
+    assert page.evaluate('location.pathname') == '/'
+    assert errors == []
+    c.close()
+
+
 def test_every_main_route_renders(app):
     for route in ROUTES:
         closed = app.page.locator('#rail .rail-phase[aria-expanded=false]')
@@ -174,7 +236,7 @@ def test_dashboard_map_and_module_page_point_to_the_next_step(app_factory):
     done = ', '.join("'m00-e0%d': {state: 'solved', ds: 'sales', at: Date.now()}" % i for i in (1, 2, 3))
     app = app_factory('home', init_script=SEEDED % done)
     app.page.wait_for_selector('.welcome')
-    assert app.page.get_attribute('.welcome .btn.primary', 'href') == '#m01-e01'
+    assert app.page.get_attribute('.welcome .btn.primary', 'href') == '/getting-started/exercise-1'
     app.go('learn')
     app.page.wait_for_selector('.mod-card.upnext')
     assert 'module 1' in app.page.inner_text('.mod-card.upnext').lower()
@@ -189,7 +251,7 @@ def test_solving_the_last_exercise_completes_the_module(app_factory, solution):
     app.open_exercise('m00-e03', 'sales')
     state, text = app.check(solution('m00', 3, 'sales'))
     assert state == 'ok' and 'That completes Module 0' in text
-    assert app.page.get_attribute('.fb.ok .btn.primary', 'href') == '#m01'
+    assert app.page.get_attribute('.fb.ok .btn.primary', 'href') == '/getting-started'
 
 
 def test_theme_setting_switches_system_light_dark_and_remembers(app_factory):
@@ -337,8 +399,8 @@ def test_visits_are_counted_anonymously_when_a_counter_is_configured(browser, ba
     page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(300)
     page.evaluate("location.hash = 'm04'"); page.wait_for_timeout(200)          # same route again: not counted twice
     page.evaluate("location.hash = 'm04-e03'"); page.wait_for_timeout(300)
-    page.evaluate("location.hash = 'constructor'"); page.wait_for_timeout(300)  # unknown routes are counted as home, never as raw text
-    assert paths() == ['/', '/m04', '/m04-e03', '/']
+    page.evaluate("location.hash = 'constructor'"); page.wait_for_timeout(300)  # an unknown hash is ignored, never counted as raw text
+    assert paths() == ['/', '/joins', '/joins/exercise-3']
     # solving an exercise sends one milestone, and never the learner's SQL
     page.select_option('#ds-select', 'sales'); page.wait_for_timeout(300)
     page.evaluate("location.hash = 'm00-e01'"); page.wait_for_selector('.task')
@@ -506,8 +568,8 @@ def test_google_analytics_after_allow_reports_routes_and_milestones_without_sql(
     page.evaluate("s => document.querySelector('.work .CodeMirror').CodeMirror.setValue(s)", solution('m00', 1, 'sales'))
     page.click(".action-bar button:has-text('Check answer')"); page.wait_for_selector('.fb.ok', timeout=15000); page.wait_for_timeout(300)
     calls = ga_calls(page)
-    views = [c[2]['page_location'].split('/')[-1] for c in calls if c[:2] == ['event', 'page_view']]
-    assert views[:3] == ['', 'm04', 'm00-e01'], views
+    views = [c[2]['page_location'].split('//', 1)[1].split('/', 1)[1] for c in calls if c[:2] == ['event', 'page_view']]
+    assert views[:3] == ['', 'joins', 'start-here/exercise-1'], views
     assert ['event', 'exercise_solved', {'exercise_id': 'm00-e01', 'module_id': 'm00', 'level': 'Easy', 'help': 'none'}] in calls
     assert 'select' not in str(calls).lower(), 'no SQL may reach Google'
     ctx.close()

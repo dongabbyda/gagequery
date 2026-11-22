@@ -66,7 +66,12 @@ node tests/check_dialects.mjs   # run the PostgreSQL snippets on the "In other d
 7. **No network at runtime.** Everything is inlined, fonts included (variable Latin subsets from `@fontsource-variable/*`, base64 in `assemble.py`); the page makes no external request, except one optional anonymous visit counter (an image request to GoatCounter, added only when the build gets `GOATCOUNTER_URL`; the Cloudflare Pages build variables set it, local builds and tests do not) and opt-in Google Analytics (set by `GA_MEASUREMENT_ID` in the Cloudflare Pages build variables). Both run only after consent (`Consent` in `src/app.js`, notice in `viewPrivacy()`); if you change what they collect, update the notice and bump `PRIVACY.version` so everyone is asked again. The CSP in
    `public/_headers` is what production serves and what the browser tests run under. Do not add `eval`,
    `new Function`, or remote scripts.
-8. **Progress lives in localStorage** under `gagequery-v1` (falls back to the old `querycraft-v1` key). Changing
+8. **Addresses are real paths** (`/summarising-data/exercise-1`), built from fixed route ids (`m03-e01`) in `pathFor()` / `idFromPath()`
+   in `src/app.js`; the slugs are in `SLUG` (keyed by module id, so renaming a module title never breaks a link). Old `/#m03-e01`
+   links are converted on load. The host must send unknown paths to `index.html` (Cloudflare Pages does when there is no
+   404.html; `netlify.toml` and `scripts/serve.py` do it too). A page opened from a file, or inside an Artifact, falls back to `#routes`.
+   A new page needs an entry in `ROUTE_PATH`.
+9. **Progress lives in localStorage** under `gagequery-v1` (falls back to the old `querycraft-v1` key). Changing
    the shape of the saved state needs a migration, not a new key: bump `S.v` and extend `migrate()` in `src/app.js`.
    XP, levels, streaks and badges are derived from the saved state, not stored.
 

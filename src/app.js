@@ -17,12 +17,58 @@ function h(tag, attrs) {
   if (attrs) for (var k in attrs) {
     var v = attrs[k]; if (v === false || v == null) continue;
     if (k === 'class') el.className = v; else if (k === 'html') el.innerHTML = v; else if (k === 'text') el.textContent = v;
-    else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v); else el.setAttribute(k, v === true ? '' : v);
+    else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v); else el.setAttribute(k, v === true ? '' : (k === 'href' ? routeHref(v) : v));
   }
   for (var i = 2; i < arguments.length; i++) { var c = arguments[i]; if (c == null || c === false) continue; if (Array.isArray(c)) c.forEach(function (x) { if (x) el.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); }); else el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); }
   return el;
 }
 function $(sel, root) { return (root || document).querySelector(sel); }
+
+/* ================================================================ addresses
+   The production page uses real paths such as /summarising-data/exercise-1 (the build adds the "paths" meta tag and
+   the host sends every unknown path to index.html). Opened from a file, or inside an Artifact, it keeps using #routes.
+   Route ids (m03-e01, settings ...) never change: they are the permanent keys for progress and analytics. */
+var USE_PATHS = (function () {
+  var m = document.querySelector('meta[name="gagequery-routing"]');
+  return !!(m && m.getAttribute('content') === 'paths' && /^https?:$/.test(location.protocol) && window.history && history.pushState);
+})();
+var ROUTE_PATH = { home: '/', learn: '/course', practice: '/practice', playground: '/playground', progress: '/progress', datasets: '/datasets',
+  settings: '/settings', privacy: '/settings/privacy', feedback: '/settings/feedback', about: '/settings/how-it-works' };
+var SLUG = { m00: 'start-here', m01: 'getting-started', m15: 'creating-tables', m02: 'cleaning-up-results', m03: 'summarising-data', m04: 'joins', m05: 'subqueries',
+  m06: 'ctes-and-set-operations', m07: 'ranking-windows', m08: 'time-series-windows', m09: 'pivots-dates-strings', m10: 'views-and-procedures',
+  m11: 'indexes-and-tuning', m12: 'transactions', m13: 'data-cleaning', m16: 'interview-practice', m14: 'capstone' };
+var PATH_ID = null;
+function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function slugOf(m) { return SLUG[m.id] || m.id; }
+/* route id -> path ('/joins/exercise-3'), or null when the id is not a page */
+function pathFor(id) {
+  if (hasOwn(ROUTE_PATH, id)) return ROUTE_PATH[id];
+  var m = /^(m\d\d)(?:-(concepts|examples|exercises|e(\d\d)))?$/.exec(id || '');
+  if (!m || !MOD_BY_ID[m[1]]) return null;
+  var mod = MOD_BY_ID[m[1]], base = '/' + slugOf(mod);
+  if (!m[2]) return base;
+  if (m[3]) return EX_BY_ID[id] ? base + '/' + (mod.capstone ? 'task-' : 'exercise-') + (+m[3]) : null;
+  return base + '/' + m[2];
+}
+/* path -> route id, or null when nothing lives there */
+function idFromPath(path) {
+  var p = String(path || '').split('#')[0].split('?')[0].toLowerCase().replace(/^\/+|\/+$/g, '');
+  if (!PATH_ID) {
+    PATH_ID = {};
+    Object.keys(ROUTE_PATH).forEach(function (k) { PATH_ID[ROUTE_PATH[k].replace(/^\/+/, '')] = k; });
+    MODS.forEach(function (m) { PATH_ID[slugOf(m)] = m.id; });
+  }
+  if (hasOwn(PATH_ID, p)) return PATH_ID[p];
+  var s = p.split('/');
+  if (s.length === 2 && hasOwn(PATH_ID, s[0]) && /^m\d\d$/.test(PATH_ID[s[0]])) {
+    var mid = PATH_ID[s[0]], x = /^(?:(concepts|examples|exercises)|(?:exercise|task)-(\d+))$/.exec(s[1]);
+    if (x && x[1]) return mid + '-' + x[1];
+    if (x && x[2]) { var eid = mid + '-e' + ('0' + x[2]).slice(-2); if (EX_BY_ID[eid]) return eid; }
+  }
+  return null;
+}
+function routeHref(v) { if (USE_PATHS && typeof v === 'string' && v.charAt(0) === '#') { var p = pathFor(v.slice(1)); if (p) return p; } return v; }
+function routePath(route) { return USE_PATHS ? (pathFor(route) || '/') : '/' + (route === 'home' ? '' : route); }
 var MOD_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl';
 
 /* ================================================================ storage */
@@ -165,7 +211,7 @@ var Analytics = (function () {
     else if (Date.now() - prev > 864e5) send('return-visit', 'return-visit', true);
     try { localStorage.setItem(MARK, String(Date.now())); } catch (e) {}
   }
-  function pageNow(route, title) { send('/' + (route === 'home' ? '' : route), title, false); }
+  function pageNow(route, title) { send(routePath(route), title, false); }
   return {
     init: init,
     configured: function () { return !!endpoint; },
@@ -184,10 +230,11 @@ var GA = (function () {
     var m = document.querySelector('meta[name="ga-measurement-id"]'), v = m && m.getAttribute('content');
     if (/^G-[A-Z0-9]{4,16}$/.test(v || '')) id = v;
   }
-  /* The app uses #routes; GA ignores the part after #, so each route is reported as a path such as /gagequery/m04. */
+  /* Each route is reported as a page address such as https://gagequery.pages.dev/joins. (When the page runs with #routes,
+     GA ignores the part after #, so the route is added to the path instead.) */
   function sendPage(route, title) {
     var base = location.origin + location.pathname.replace(/\/+$/, '');
-    window.gtag('event', 'page_view', { page_location: base + '/' + (route === 'home' ? '' : route), page_title: title });
+    window.gtag('event', 'page_view', { page_location: USE_PATHS ? location.origin + routePath(route) : base + '/' + (route === 'home' ? '' : route), page_title: title });
   }
   function enable() {
     if (!id) return;
@@ -1666,8 +1713,38 @@ function openPalette() {
 
 /* ================================================================ router */
 var currentPage = null;
-function currentRoute() { if (routeId) return routeId; var r = (location.hash || '').replace('#', ''); return r || 'home'; }
-function navigate(id) { routeId = id; try { if (location.hash !== '#' + id) location.hash = id; } catch (e) {} route(); }
+function locationRoute() {
+  if (USE_PATHS) return idFromPath(location.pathname) || 'notfound';
+  var r = (location.hash || '').replace('#', '');
+  return r || 'home';
+}
+function currentRoute() { return routeId || locationRoute(); }
+function navigate(id) {
+  id = id || 'home';
+  if (USE_PATHS && !pathFor(id)) id = 'home';
+  routeId = id;
+  try {
+    if (USE_PATHS) { var p = pathFor(id); if (location.pathname !== p) history.pushState(null, '', p); }
+    else if (location.hash !== '#' + id) location.hash = id;
+  } catch (e) {}
+  route();
+}
+/* Old links and typed hashes (/#m03-e01) become real paths. */
+function adoptHash() {
+  var r = (location.hash || '').replace('#', '');
+  if (!USE_PATHS || !r || !pathFor(r)) return false;
+  routeId = r;
+  try { history.replaceState(null, '', pathFor(r)); } catch (e) {}
+  return true;
+}
+function viewNotFound() {
+  var p = page('prose');
+  p.appendChild(h('div', { class: 'eyebrow', text: 'Page not found' }));
+  p.appendChild(h('h1', { text: 'We could not find that page' }));
+  p.appendChild(h('p', { class: 'muted', text: 'The address may be old or mistyped. Your progress is safe.' }));
+  p.appendChild(h('div', { class: 'actions' }, h('a', { class: 'btn primary', href: '#home', text: 'Go to the home page' }), h('a', { class: 'btn', href: '#learn', text: 'Open the course' })));
+  return p;
+}
 function route(keepScroll) {
   var r = currentRoute(), pg, m;
   var y = window.scrollY;
@@ -1677,6 +1754,7 @@ function route(keepScroll) {
   else if (r === 'datasets') pg = viewDatasets();
   else if (r === 'progress') pg = viewProgress();
   else if (r === 'practice') pg = viewPractice();
+  else if (r === 'notfound') pg = viewNotFound();
   else if (r === 'settings') pg = viewSettings();
   else if (r === 'privacy') pg = withSettingsTabs(viewPrivacy(), 'privacy');
   else if (r === 'feedback') pg = withSettingsTabs(viewFeedback(), 'feedback');
@@ -1692,8 +1770,7 @@ function route(keepScroll) {
   window.scrollTo(0, keepScroll === true ? y : 0);
   var h1 = pg.querySelector('h1'); document.title = (h1 ? h1.textContent + ' \u00b7 ' : '') + 'GageQuery';
   var counted = EX_BY_ID[r] || (/^(m\d\d)(-(concepts|examples|exercises))?$/.test(r) && MOD_BY_ID[r.slice(0, 3)]) || /^(home|learn|playground|datasets|progress|practice|settings|about|privacy|feedback)$/.test(r) ? r : 'home';
-  Analytics.page(counted, document.title);
-  GA.page(counted, document.title);
+  if (r !== 'notfound') { Analytics.page(counted, document.title); GA.page(counted, document.title); }
 }
 function closeRail() { rail.classList.remove('open'); $('#scrim').classList.remove('open'); }
 
@@ -1737,15 +1814,25 @@ function boot() {
   Consent.init();
   $('#pal-kbd').textContent = MOD_KEY + ' K';
   document.addEventListener('click', function (ev) {
-    var t = ev.target; while (t && t !== document && !(t.tagName === 'A' && (t.getAttribute('href') || '').charAt(0) === '#')) t = t.parentNode;
-    if (!t || t === document) return;
-    ev.preventDefault(); navigate(t.getAttribute('href').slice(1));
+    if (ev.button || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;      // new tab, new window: let the browser do it
+    var t = ev.target; while (t && t !== document && t.tagName !== 'A') t = t.parentNode;
+    if (!t || t === document || t.target) return;
+    var href = t.getAttribute('href') || '', id = null;
+    if (href.charAt(0) === '#') id = href.slice(1);
+    else if (USE_PATHS && href.charAt(0) === '/' && href.charAt(1) !== '/') id = idFromPath(href);
+    if (id === null) return;
+    ev.preventDefault(); navigate(id);
   });
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openPalette(); }
     else if (currentPage && currentPage.__keys) currentPage.__keys(e);
   });
-  window.addEventListener('hashchange', function () { var r = (location.hash || '').replace('#', ''); if (r && r !== routeId) { routeId = r; route(); } });
+  window.addEventListener('hashchange', function () {
+    if (USE_PATHS) { if (adoptHash()) route(); return; }
+    var r = (location.hash || '').replace('#', ''); if (r && r !== routeId) { routeId = r; route(); }
+  });
+  window.addEventListener('popstate', function () { if (!USE_PATHS) return; routeId = null; adoptHash(); route(); });
+  adoptHash();
   paintRail(); paintMeter();
   setDs(curDs(), true);
   route();

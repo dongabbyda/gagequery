@@ -29,7 +29,7 @@ the sql.js asm build (`#sqljs-src`) and the engine source (`#engine-src`) as tex
 
 ```
 app.js (main thread)                    engine.js (Web Worker, created from a Blob)
-  router (#hash) ─ pages                  sql.js (SQLite 3.45) + MySQL shims
+  router (paths) ─ pages                  sql.js (SQLite 3.45) + MySQL shims
   exercise workspace ─────── postMessage ─► open / run / check / snapshot / restore / resetData / schema / selftest
   feedback + mistake detectors ◄──────────  results, errors
   progress (localStorage)

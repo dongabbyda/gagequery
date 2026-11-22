@@ -56,6 +56,9 @@ apply the security headers in `public/_headers`.
 | Netlify | `npm run build` (already in `netlify.toml`) | `dist` |
 | Anything else | build locally or in CI, upload `dist/` | — |
 
+Pages use real paths such as `/joins/exercise-3`, so the host must serve `index.html` for any path that is not a file
+(Cloudflare Pages does this by default; Netlify uses the redirect in `netlify.toml`; `npm run serve` does it too).
+
 The build needs Python 3 on the build machine, linked to SQLite 3.39 or newer. Cloudflare's build image has an older
 SQLite, so its build command installs `pysqlite3-binary` first (the build uses it automatically when needed). Set
 `NODE_VERSION`, `PYTHON_VERSION`, `GOATCOUNTER_URL` and `GA_MEASUREMENT_ID` as build variables there. The page is ~3.5 MB uncompressed and ~740 KB gzipped; hosts
